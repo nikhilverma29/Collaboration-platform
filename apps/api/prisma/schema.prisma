@@ -1,0 +1,756 @@
+// =============================================================================
+// Project Ramayana — Schema (Phases 1 · 2 · 3 · 4 · 5)
+// =============================================================================
+// Phase 1: User, Workspace, WorkspaceMember, RefreshToken
+// Phase 2: AuditLog
+// Phase 3: Project, Board, Column, Task, TaskLabel, TaskHistory
+// Phase 4: Folder, File, ShareLink
+// Phase 5: Channel, ChannelMember, Message, Reaction, ReadReceipt
+// Do not modify this schema outside of a documented, deliberate decision.
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+/// The four roles a member can hold inside a workspace.
+/// Defined here so Phase 2 (RBAC) can build permission logic on top of it.
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+// -----------------------------------------------------------------------------
+// User
+// The core identity record. A user exists independently of any workspace.
+// Workspace access is granted through WorkspaceMember entries.
+// -----------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  bio          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  memberships         WorkspaceMember[]
+  ownedWorkspaces     Workspace[]       @relation("WorkspaceOwner")
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  auditLogs          AuditLog[]        @relation("UserAuditLogs")
+  // Phase 3
+  createdProjects    Project[]         @relation("ProjectCreator")
+  projectMemberships ProjectMember[]
+  assignedTasks      Task[]            @relation("TaskAssignee")
+  reportedTasks      Task[]            @relation("TaskReporter")
+  taskHistoryEntries TaskHistory[]     @relation("TaskHistoryActor")
+  // Phase 4
+  createdFolders     Folder[]          @relation("FolderCreator")
+  createdFiles       File[]            @relation("FileCreator")
+  createdShareLinks  ShareLink[]       @relation("ShareLinkCreator")
+  // Phase 5
+  channelMemberships ChannelMember[]
+  messages           Message[]         @relation("MessageAuthor")
+  editedMessages     Message[]         @relation("MessageEditor")
+  reactions          Reaction[]
+  readReceipts       ReadReceipt[]
+  createdChannels    Channel[]         @relation("ChannelCreator")
+
+  // Phase 7
+  managerId          String?
+  manager            User?             @relation("UserManager", fields: [managerId], references: [id])
+  directReports      User[]            @relation("UserManager")
+  organizedMeetings  Meeting[]         @relation("MeetingOrganizer")
+  meetingInvitations MeetingParticipant[]
+  leaveRequests      LeaveRequest[]    @relation("LeaveRequester")
+  reviewedLeaves     LeaveRequest[]    @relation("LeaveReviewer")
+  notifications      Notification[]
+
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// Workspace
+// The tenant unit. Every piece of business data in the system belongs to
+// a workspace. Isolation is enforced at the query layer, not via RLS.
+// -----------------------------------------------------------------------------
+
+model Workspace {
+  id         String   @id @default(cuid())
+  name       String
+  /// URL-safe unique identifier for the workspace (e.g. "acme-corp").
+  slug       String   @unique
+  logoUrl    String?
+  /// Shareable invite code. Users present this code to join the workspace.
+  /// Can be rotated by an admin in a future phase.
+  inviteCode String   @unique @default(cuid())
+  ownerId    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  owner     User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members   WorkspaceMember[]
+  auditLogs AuditLog[]        @relation("WorkspaceAuditLogs")
+  // Phase 3
+  projects  Project[]
+  tasks     Task[]
+  // Phase 4
+  folders   Folder[]
+  files     File[]
+  // Phase 5
+  channels  Channel[]
+  messages  Message[]
+
+  // Phase 7
+  meetings       Meeting[]
+  leaveRequests  LeaveRequest[]
+  notifications  Notification[]
+
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+// -----------------------------------------------------------------------------
+// WorkspaceMember
+// The pivot table that connects a User to a Workspace with a Role.
+// This is the tenant isolation pivot — every tenant-scoped query will
+// JOIN or filter through this table to verify membership and role.
+// -----------------------------------------------------------------------------
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(EMPLOYEE)
+  joinedAt    DateTime      @default(now())
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// A user can only be a member of the same workspace once.
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+// -----------------------------------------------------------------------------
+// RefreshToken
+// Persisted session record. One row per active device/session per user.
+// Token rotation: on every use, the old record is invalidated and a new
+// one is inserted. The sessionId is embedded in the JWT access token.
+// -----------------------------------------------------------------------------
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  /// The raw refresh token is never stored. Only its bcrypt hash is persisted.
+  tokenHash String   @unique
+  userId    String
+  /// Embedded in the JWT payload. Lets middleware identify the session without
+  /// a database lookup on every request.
+  sessionId String   @unique @default(cuid())
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sessionId])
+  @@map("refresh_tokens")
+}
+
+// -----------------------------------------------------------------------------
+// PasswordResetToken
+// Temporary token to reset forgotten passwords.
+// -----------------------------------------------------------------------------
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+// -----------------------------------------------------------------------------
+// AuditLog
+// Tracks governance and sensitive administrative actions at the tenant level.
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actorId     String?  // Optional in case the actor is deleted
+  action      String
+  targetId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation("WorkspaceAuditLogs", fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor       User?     @relation("UserAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([actorId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// =============================================================================
+// Phase 3 — Projects & Kanban
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+/// Priority level of a task.
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+/// Lifecycle status of a task.
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+
+
+enum MeetingParticipantStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  TENTATIVE
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// The type of action recorded in task history.
+enum TaskHistoryAction {
+  CREATED
+  UPDATED
+  ASSIGNED
+  UNASSIGNED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  MOVED
+  ARCHIVED
+  DELETED
+}
+
+// -----------------------------------------------------------------------------
+// Project
+// A high-level container for work within a workspace.
+// A workspace can have many projects.
+// -----------------------------------------------------------------------------
+
+model Project {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  description String?
+  isArchived  Boolean  @default(false)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User            @relation("ProjectCreator", fields: [createdById], references: [id])
+  members     ProjectMember[]
+  boards      Board[]
+
+  @@index([workspaceId])
+  @@index([createdById])
+  @@map("projects")
+}
+
+// -----------------------------------------------------------------------------
+// ProjectMember
+// Tracks which workspace members have access to a specific project.
+// Allows project-level visibility control beyond workspace membership.
+// -----------------------------------------------------------------------------
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  addedAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+// -----------------------------------------------------------------------------
+// Board
+// A Kanban board that belongs to a Project.
+// Each project has one default board.
+// -----------------------------------------------------------------------------
+
+model Board {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String   @default("Main Board")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  columns Column[]
+
+  @@index([projectId])
+  @@map("boards")
+}
+
+// -----------------------------------------------------------------------------
+// Column
+// A vertical stage on a Board (e.g. "To Do", "In Progress", "Done").
+// Columns define the workflow states for tasks.
+// -----------------------------------------------------------------------------
+
+model Column {
+  id       String @id @default(cuid())
+  boardId  String
+  name     String
+  /// Display order of this column on the board. Lower = further left.
+  position Int
+
+  board Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@index([boardId])
+  @@map("columns")
+}
+
+// -----------------------------------------------------------------------------
+// Task
+// The core unit of work. Tasks live inside a Column on a Board.
+// They carry priority, status, labels, assignee, due date, and ordering.
+// -----------------------------------------------------------------------------
+
+model Task {
+  id          String       @id @default(cuid())
+  workspaceId String
+  projectId   String
+  columnId    String
+  title       String
+  description String?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(TODO)
+  /// Comma-separated tags / labels. Stored as plain text for Phase 3 simplicity.
+  /// Phase 6 (search) will index these.
+  labels      String?
+  assigneeId  String?
+  reporterId  String
+  dueDate     DateTime?
+  /// Floating-point position for drag-and-drop order within a column.
+  /// Avoids integer reordering cascades.
+  position    Float        @default(0)
+  isArchived  Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  column    Column        @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  assignee  User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter  User          @relation("TaskReporter", fields: [reporterId], references: [id])
+  history   TaskHistory[]
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([columnId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([priority])
+  @@map("tasks")
+}
+
+// -----------------------------------------------------------------------------
+// TaskHistory
+// Immutable append-only log of every mutation to a Task.
+// This powers the activity timeline visible in the task detail view.
+// -----------------------------------------------------------------------------
+
+model TaskHistory {
+  id        String            @id @default(cuid())
+  taskId    String
+  actorId   String?
+  action    TaskHistoryAction
+  /// JSON snapshot of what changed. e.g. { "from": "TODO", "to": "IN_PROGRESS" }
+  metadata  Json?
+  createdAt DateTime          @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User? @relation("TaskHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([actorId])
+  @@map("task_history")
+}
+
+// =============================================================================
+// Phase 4 — Documents & Storage
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Folder
+// Supports infinite nesting via parentId. 
+// A folder belongs to a workspace.
+// -----------------------------------------------------------------------------
+
+model Folder {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  parentId    String?  // null means root folder
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("FolderCreator", fields: [createdById], references: [id])
+  parent    Folder?   @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]  @relation("FolderHierarchy")
+  files     File[]
+
+  @@index([workspaceId])
+  @@index([parentId])
+  @@map("folders")
+}
+
+// -----------------------------------------------------------------------------
+// File
+// Metadata for a file physically stored in Supabase Storage.
+// size is in bytes. path is the S3 object key.
+// -----------------------------------------------------------------------------
+
+model File {
+  id          String   @id @default(cuid())
+  workspaceId String
+  folderId    String?  // null means root of the workspace
+  name        String
+  size        Int
+  mimeType    String
+  /// The object key in the Supabase bucket (e.g., workspaceId/UUID.pdf)
+  storagePath String   @unique
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder    Folder?      @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  createdBy User         @relation("FileCreator", fields: [createdById], references: [id])
+  shares    ShareLink[]
+  messages  Message[]
+
+  @@index([workspaceId])
+  @@index([folderId])
+  @@map("files")
+}
+
+// -----------------------------------------------------------------------------
+// ShareLink
+// A secure, expiring public link for a file (for external vendors).
+// -----------------------------------------------------------------------------
+
+model ShareLink {
+  id        String   @id @default(cuid())
+  fileId    String
+  token     String   @unique @default(cuid()) // URL safe random token
+  expiresAt DateTime
+  createdById String
+  createdAt DateTime @default(now())
+
+  file      File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  createdBy User @relation("ShareLinkCreator", fields: [createdById], references: [id])
+
+  @@index([fileId])
+  @@index([token])
+  @@map("share_links")
+}
+
+// =============================================================================
+// Phase 5 — Full Realtime Communication
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+/// Whether a channel is a workspace public channel, a private channel, or a DM.
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT // 1:1 Direct Message
+}
+
+// -----------------------------------------------------------------------------
+// Channel
+// A conversation container. Can be a public workspace channel, a private
+// group channel, or a 1:1 direct message (DM) between two users.
+// -----------------------------------------------------------------------------
+
+model Channel {
+  id          String      @id @default(cuid())
+  workspaceId String
+  name        String?     // Null for DMs (display name is derived from members)
+  type        ChannelType @default(PUBLIC)
+  description String?
+  isArchived  Boolean     @default(false)
+  createdById String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("ChannelCreator", fields: [createdById], references: [id])
+  members   ChannelMember[]
+  messages  Message[]
+
+  @@index([workspaceId])
+  @@index([type])
+  @@map("channels")
+}
+
+// -----------------------------------------------------------------------------
+// ChannelMember
+// Tracks which users have access to a Channel.
+// For PUBLIC channels: all workspace members are implicit members (queried via WorkspaceMember).
+// For PRIVATE and DIRECT channels: access is strictly controlled by this table.
+// -----------------------------------------------------------------------------
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  channelId String
+  userId    String
+  joinedAt  DateTime @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([channelId])
+  @@index([userId])
+  @@map("channel_members")
+}
+
+// -----------------------------------------------------------------------------
+// Message
+// Core unit of communication. A message belongs to a Channel.
+// Threading is supported via parentId (a reply points to its parent message).
+// Soft-delete: isDeleted=true hides content but preserves thread structure.
+// -----------------------------------------------------------------------------
+
+model Message {
+  id          String    @id @default(cuid())
+  workspaceId String
+  channelId   String
+  authorId    String
+  content     String
+  /// If set, this message is a reply to the referenced message (thread reply).
+  parentId    String?
+  /// If set, this message has an attached file from Phase 4 storage.
+  fileId      String?
+  isEdited    Boolean   @default(false)
+  editedById  String?
+  isDeleted   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  channel   Channel      @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author    User         @relation("MessageAuthor", fields: [authorId], references: [id])
+  editedBy  User?        @relation("MessageEditor", fields: [editedById], references: [id])
+  /// Parent message (if this is a thread reply).
+  parent    Message?     @relation("MessageThread", fields: [parentId], references: [id])
+  /// All replies to this message.
+  replies   Message[]    @relation("MessageThread")
+  file      File?        @relation(fields: [fileId], references: [id])
+  reactions Reaction[]
+  readBy    ReadReceipt[]
+
+  @@index([workspaceId])
+  @@index([channelId])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("messages")
+}
+
+// -----------------------------------------------------------------------------
+// Reaction
+// An emoji reaction on a message. A user can react with multiple different emojis
+// but can only use the same emoji once per message.
+// -----------------------------------------------------------------------------
+
+model Reaction {
+  id        String @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String // Unicode emoji e.g. "👍"
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("reactions")
+}
+
+// -----------------------------------------------------------------------------
+// ReadReceipt
+// Tracks the last message a user has read in a channel.
+// Used to compute unread badge counts.
+// -----------------------------------------------------------------------------
+
+model ReadReceipt {
+  id              String   @id @default(cuid())
+  userId          String
+  messageId       String
+  readAt          DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([userId])
+  @@index([messageId])
+  @@map("read_receipts")
+}
+
+// =============================================================================
+// Phase 7 — Org Chart & Calendar
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Meeting
+// A scheduled calendar event in a workspace.
+// -----------------------------------------------------------------------------
+
+model Meeting {
+  id          String   @id @default(cuid())
+  workspaceId String
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  organizerId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace    Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organizer    User                 @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Cascade)
+  participants MeetingParticipant[]
+
+  @@index([workspaceId])
+  @@index([organizerId])
+  @@index([startTime])
+  @@map("meetings")
+}
+
+model MeetingParticipant {
+  id        String   @id @default(cuid())
+  meetingId String
+  userId    String
+  status    MeetingParticipantStatus @default(PENDING)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([userId])
+  @@map("meeting_participants")
+}
+
+// -----------------------------------------------------------------------------
+// LeaveRequest
+// Out-of-office requests tied to a user's manager.
+// -----------------------------------------------------------------------------
+
+model LeaveRequest {
+  id          String      @id @default(cuid())
+  workspaceId String
+  userId      String
+  startDate   DateTime
+  endDate     DateTime
+  reason      String?
+  status      LeaveStatus @default(PENDING)
+  reviewerId  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer  User?     @relation("LeaveReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([reviewerId])
+  @@map("leave_requests")
+}
+
+// =============================================================================
+// Phase Gaps — Notifications
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// Notification
+// Unified notification stream for a user in a workspace.
+// -----------------------------------------------------------------------------
+
+model Notification {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  type        String   // e.g. "TASK_ASSIGNED", "MENTION", "LEAVE_APPROVED"
+  title       String
+  body        String?
+  link        String?  // Frontend route to navigate to
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}

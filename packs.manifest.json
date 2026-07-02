@@ -1,0 +1,201 @@
+{
+  "packs": [
+    {
+      "id": "00-core-foundation",
+      "title": "Core Foundation",
+      "dependencies": [],
+      "purpose": "The monorepo bootstrap layer: Express server wiring, Prisma schema + migrations, database client, JWT signing/verification, cookie management, Supabase storage client, all middleware, and the shared validators package. Every other pack depends on at least some of these files.",
+      "mainFlow": "App startup → Helmet/CORS/Rate-limit middleware → Route registration → SocketService init → Global error handler → process safety nets.",
+      "files": [
+        "apps/api/package.json",
+        "apps/api/tsconfig.json",
+        "apps/api/prisma.config.ts",
+        "apps/api/prisma/schema.prisma",
+        "apps/api/prisma/migrations/migration_lock.toml",
+        "apps/api/prisma/migrations/20260628205233_phase1_core_foundation/migration.sql",
+        "apps/api/prisma/migrations/20260628215519_phase2_audit_log/migration.sql",
+        "apps/api/prisma/migrations/20260630021046_phase3_projects_kanban/migration.sql",
+        "apps/api/prisma/migrations/20260701065726_phase4_storage/migration.sql",
+        "apps/api/prisma/migrations/20260701071749_phase5_communication/migration.sql",
+        "apps/api/prisma/migrations/20260701081405_phase7_org_calendar/migration.sql",
+        "apps/api/src/index.ts",
+        "apps/api/src/lib/db.ts",
+        "apps/api/src/lib/jwt.ts",
+        "apps/api/src/lib/cookie.ts",
+        "apps/api/src/lib/supabase.ts",
+        "apps/api/src/middleware/auth.ts",
+        "apps/api/src/middleware/tenant.ts",
+        "apps/api/src/middleware/rbac.ts",
+        "packages/validators/src/index.ts",
+        "packages/validators/src/auth.ts",
+        "packages/validators/src/workspace.ts",
+        "packages/validators/src/rbac.ts",
+        "packages/validators/src/socket.events.ts",
+        "packages/validators/src/socket.types.ts",
+        "packages/validators/src/project.ts",
+        "packages/validators/src/task.ts",
+        "packages/validators/src/storage.ts",
+        "packages/validators/src/channel.ts",
+        "packages/validators/src/message.ts",
+        "packages/validators/src/receipt.ts",
+        "packages/validators/src/search.ts",
+        "packages/validators/src/org.ts",
+        "packages/validators/src/calendar.ts"
+      ]
+    },
+    {
+      "id": "01-auth-sessions",
+      "title": "Authentication & Sessions",
+      "dependencies": ["00-core-foundation"],
+      "purpose": "User registration, login, logout, and refresh-token rotation. Passwords are bcrypt-hashed. Refresh tokens are SHA-256 hashed before DB storage. Reuse of a revoked token triggers a full session wipe (theft detection).",
+      "mainFlow": "POST /api/auth/register → hash password → create user → create session → set HttpOnly cookies. POST /api/auth/login → verify password → rotate session. POST /api/auth/refresh → validate hash → revoke old → issue new. POST /api/auth/logout → revoke + clear cookies.",
+      "files": [
+        "apps/api/src/modules/auth/auth.service.ts",
+        "apps/api/src/modules/auth/auth.controller.ts",
+        "apps/api/src/modules/auth/auth.routes.ts",
+        "apps/api/src/middleware/auth.ts",
+        "packages/validators/src/auth.ts"
+      ]
+    },
+    {
+      "id": "02-workspace-tenancy",
+      "title": "Multi-Tenancy & Workspace System",
+      "dependencies": ["00-core-foundation", "01-auth-sessions"],
+      "purpose": "Workspace creation, invite-code based joining, workspace switching (re-issues JWT with workspaceId + role), and member management. The requireWorkspace middleware enforces that all subsequent API calls carry tenant context.",
+      "mainFlow": "POST /api/workspaces → create + set as OWNER. POST /api/workspaces/join → validate invite code → add as EMPLOYEE. POST /api/workspaces/:id/switch → re-sign JWT with workspaceId and role embedded.",
+      "files": [
+        "apps/api/src/modules/workspace/workspace.service.ts",
+        "apps/api/src/modules/workspace/workspace.controller.ts",
+        "apps/api/src/modules/workspace/workspace.routes.ts",
+        "apps/api/src/middleware/tenant.ts",
+        "packages/validators/src/workspace.ts"
+      ]
+    },
+    {
+      "id": "03-rbac-governance",
+      "title": "RBAC & Governance",
+      "dependencies": ["00-core-foundation", "01-auth-sessions", "02-workspace-tenancy"],
+      "purpose": "Role-Based Access Control enforced via the requirePermission middleware. Roles (OWNER, ADMIN, MANAGER, EMPLOYEE) map to explicit permission sets defined in the validators package. Audit log records every destructive action.",
+      "mainFlow": "Request hits route → requireAuth → requireWorkspace → requirePermission(Permission.X) → checks ROLE_PERMISSIONS[role] → 403 if missing. Audit events written via AuditService.log().",
+      "files": [
+        "apps/api/src/middleware/rbac.ts",
+        "apps/api/src/modules/audit/audit.service.ts",
+        "packages/validators/src/rbac.ts"
+      ]
+    },
+    {
+      "id": "04-realtime-infra",
+      "title": "Realtime Infrastructure",
+      "dependencies": ["00-core-foundation", "01-auth-sessions", "02-workspace-tenancy"],
+      "purpose": "Socket.io layer providing authenticated, workspace-scoped real-time connections. The HTTP handshake is intercepted to verify the same JWT as the REST API. Events are emitted only to workspace:${workspaceId} rooms via a centralized SocketService singleton.",
+      "mainFlow": "Client connects → socketAuthMiddleware parses HttpOnly cookie → verifyAccessToken → reject if no workspaceId → socket.data.user set → gateway joins workspace room → SocketService.broadcastToWorkspace() sends events.",
+      "files": [
+        "apps/api/src/modules/socket/socket.service.ts",
+        "apps/api/src/modules/socket/socket.gateway.ts",
+        "apps/api/src/modules/socket/socket.middleware.ts",
+        "packages/validators/src/socket.events.ts",
+        "packages/validators/src/socket.types.ts"
+      ]
+    },
+    {
+      "id": "05-projects-kanban",
+      "title": "Projects & Kanban",
+      "dependencies": ["00-core-foundation", "02-workspace-tenancy", "03-rbac-governance", "04-realtime-infra"],
+      "purpose": "Projects, Kanban boards with columns, tasks with priority/status/labels, drag-and-drop position updates, task history tracking, and real-time task state synchronization via Socket.io.",
+      "mainFlow": "POST /api/projects → create project. GET /api/projects/:id/board → full board with columns+tasks. POST /api/tasks → create task in column. PATCH /api/tasks/:id/move → reorder task. Every mutation emits a socket event to the workspace room.",
+      "files": [
+        "apps/api/src/modules/project/project.service.ts",
+        "apps/api/src/modules/project/project.controller.ts",
+        "apps/api/src/modules/project/project.routes.ts",
+        "apps/api/src/modules/project/task.service.ts",
+        "apps/api/src/modules/project/task.controller.ts",
+        "apps/api/src/modules/project/task.routes.ts",
+        "apps/api/src/modules/project/column.service.ts",
+        "packages/validators/src/project.ts",
+        "packages/validators/src/task.ts"
+      ]
+    },
+    {
+      "id": "06-storage-docs",
+      "title": "Documents & Storage",
+      "dependencies": ["00-core-foundation", "02-workspace-tenancy", "03-rbac-governance"],
+      "purpose": "Folder hierarchy, file registration after Supabase presigned-URL upload, file rename/move/delete, share links with expiry, and cascading folder deletion. All storage paths are prefixed with workspaceId to guarantee tenant isolation at the bucket level.",
+      "mainFlow": "POST /api/storage/files/upload-url → returns Supabase presigned PUT URL. POST /api/storage/files → register file metadata in DB. POST /api/storage/files/:id/share → create time-limited share link. GET /api/storage/share/:token → resolve and redirect.",
+      "files": [
+        "apps/api/src/modules/storage/file.service.ts",
+        "apps/api/src/modules/storage/file.controller.ts",
+        "apps/api/src/modules/storage/folder.service.ts",
+        "apps/api/src/modules/storage/folder.controller.ts",
+        "apps/api/src/modules/storage/share.service.ts",
+        "apps/api/src/modules/storage/share.controller.ts",
+        "apps/api/src/modules/storage/storage.routes.ts",
+        "packages/validators/src/storage.ts"
+      ]
+    },
+    {
+      "id": "07-chat-communication",
+      "title": "Full Realtime Communication",
+      "dependencies": ["00-core-foundation", "02-workspace-tenancy", "03-rbac-governance", "04-realtime-infra"],
+      "purpose": "Public/Private channels, Direct Message channels, message sending with cursor-based pagination, thread replies, message reactions, message editing/deletion, and read receipts. All events broadcast to workspace socket rooms in real time.",
+      "mainFlow": "POST /api/channels → create channel. POST /api/messages → send message → emit socket event. POST /api/messages/:id/reactions → toggle reaction. GET /api/messages?channelId&before → paginated history. POST /api/messages/receipts/mark → mark as read.",
+      "files": [
+        "apps/api/src/modules/chat/channel.service.ts",
+        "apps/api/src/modules/chat/channel.controller.ts",
+        "apps/api/src/modules/chat/channel.routes.ts",
+        "apps/api/src/modules/chat/message.service.ts",
+        "apps/api/src/modules/chat/message.controller.ts",
+        "apps/api/src/modules/chat/message.routes.ts",
+        "apps/api/src/modules/chat/receipt.service.ts",
+        "apps/api/src/modules/chat/receipt.controller.ts",
+        "packages/validators/src/channel.ts",
+        "packages/validators/src/message.ts",
+        "packages/validators/src/receipt.ts"
+      ]
+    },
+    {
+      "id": "08-search-discovery",
+      "title": "Global Search",
+      "dependencies": ["00-core-foundation", "02-workspace-tenancy", "05-projects-kanban", "06-storage-docs", "07-chat-communication"],
+      "purpose": "Cross-entity full-text search across tasks, messages, and files — all scoped to the active workspace. A single query endpoint fans out to three Prisma queries and merges the results into a typed union response.",
+      "mainFlow": "GET /api/search?q=term → SearchService.search(workspaceId, q) → concurrent prisma.task.findMany + prisma.message.findMany + prisma.file.findMany → merge → return typed hits array.",
+      "files": [
+        "apps/api/src/modules/search/search.service.ts",
+        "apps/api/src/modules/search/search.controller.ts",
+        "apps/api/src/modules/search/search.routes.ts",
+        "packages/validators/src/search.ts"
+      ]
+    },
+    {
+      "id": "09-org-calendar",
+      "title": "Org Chart & Calendar",
+      "dependencies": ["00-core-foundation", "01-auth-sessions", "02-workspace-tenancy", "03-rbac-governance", "04-realtime-infra"],
+      "purpose": "Org chart with manager/report relationships (circular dependency prevention), leave request workflow (request → manager approve/reject → cancel), meeting scheduling with per-participant RSVP, and dynamic presence computation (ONLINE/BUSY/OUT_OF_OFFICE/OFFLINE) based on socket state, approved leaves, and accepted meetings.",
+      "mainFlow": "PUT /api/org/members/:id/manager → set manager (circular check). POST /api/calendar/leaves → request leave. PUT /api/calendar/leaves/:id → manager review. POST /api/calendar/meetings → schedule meeting. PUT /api/calendar/meetings/:id/rsvp → accept/decline. GET /api/presence/:userId → compute current status.",
+      "files": [
+        "apps/api/src/modules/org/org.service.ts",
+        "apps/api/src/modules/org/org.controller.ts",
+        "apps/api/src/modules/org/org.routes.ts",
+        "apps/api/src/modules/calendar/calendar.service.ts",
+        "apps/api/src/modules/calendar/calendar.controller.ts",
+        "apps/api/src/modules/calendar/calendar.routes.ts",
+        "apps/api/src/modules/presence/presence.service.ts",
+        "apps/api/src/modules/presence/presence.controller.ts",
+        "apps/api/src/modules/presence/presence.routes.ts",
+        "packages/validators/src/org.ts",
+        "packages/validators/src/calendar.ts"
+      ]
+    },
+    {
+      "id": "10-ai-copilot",
+      "title": "AI Copilot",
+      "dependencies": ["00-core-foundation", "02-workspace-tenancy", "05-projects-kanban", "06-storage-docs", "07-chat-communication"],
+      "purpose": "Vercel AI SDK integration with OpenAI (gpt-4o). Five features: (1) streaming workspace-aware chat, (2) channel message summarization, (3) structured task enrichment using generateObject + Zod schema, (4) document Q&A via RAG pattern with Supabase Storage, (5) workspace assistant that injects live task context into the system prompt. All endpoints rate-limited (20 req/15min) to prevent financial DoS.",
+      "mainFlow": "POST /api/ai/chat → streamText → pipe to response. POST /api/ai/summarize/channel/:id → fetch messages → generateText. POST /api/ai/enrich/task/:id → generateObject (structured JSON). POST /api/ai/qa/document/:id → download from Supabase → generateText with doc context. POST /api/ai/assistant → fetch open tasks → inject into system prompt → streamText.",
+      "files": [
+        "apps/api/src/modules/ai/ai.service.ts",
+        "apps/api/src/modules/ai/ai.controller.ts",
+        "apps/api/src/modules/ai/ai.routes.ts"
+      ]
+    }
+  ]
+}
