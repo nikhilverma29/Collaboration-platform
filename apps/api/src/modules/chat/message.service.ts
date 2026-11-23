@@ -47,6 +47,8 @@ export class MessageService {
 
   /**
    * Send a new message into a channel (or thread reply if parentId is set).
+   * Returns the created message and the list of mentioned user IDs.
+   * The controller is responsible for dispatching mention notifications.
    */
   static async send(workspaceId: string, actorId: string, data: SendMessageInput) {
     // If this is a thread reply, validate the parent message exists in the same channel
@@ -73,46 +75,29 @@ export class MessageService {
       include: messageInclude,
     });
 
-    // Extract mentions: e.g. @Alice
-    const mentions = data.content.match(/@(\w+)/g);
-    if (mentions) {
-      const displayNames = mentions.map(m => m.substring(1));
-      
-      const mentionedUsers = await prisma.workspaceMember.findMany({
+    // Resolve @mentions to user IDs so the controller can dispatch notifications.
+    // The service does not create notifications or emit sockets — that is the
+    // controller's responsibility (separation of concerns).
+    const mentionedUserIds: string[] = [];
+    const mentionMatches = data.content.match(/@(\w+)/g);
+    if (mentionMatches) {
+      const displayNames = mentionMatches.map(m => m.substring(1));
+
+      const mentionedMembers = await prisma.workspaceMember.findMany({
         where: {
           workspaceId,
           user: { displayName: { in: displayNames } }
         },
-        include: { user: true }
+        select: { userId: true }
       });
 
-      // Avoid notifying the author if they mention themselves
-      const usersToNotify = mentionedUsers.filter(m => m.userId !== actorId);
-
-      // We can't safely import NotificationService directly due to circular dependency risk, 
-      // but they are loosely coupled. Let's just create them via prisma and emit.
-      for (const m of usersToNotify) {
-        await prisma.notification.create({
-          data: {
-            workspaceId,
-            userId: m.userId,
-            type: "MENTION",
-            title: "New Mention",
-            body: `${message.author.displayName} mentioned you in a message.`,
-            link: `/workspaces/${workspaceId}/chat/${data.channelId}`,
-          }
-        });
-        
-        // Dynamic import to avoid circular dependency
-        const { SocketService: Socket } = require("../socket/socket.service");
-        Socket.sendToUser(m.userId, "notification:received" as any, {
-          title: "New Mention",
-          body: `${message.author.displayName} mentioned you in a message.`
-        });
-      }
+      // Exclude the author if they mentioned themselves
+      mentionedMembers
+        .filter(m => m.userId !== actorId)
+        .forEach(m => mentionedUserIds.push(m.userId));
     }
 
-    return message;
+    return { message, mentionedUserIds };
   }
 
   /**

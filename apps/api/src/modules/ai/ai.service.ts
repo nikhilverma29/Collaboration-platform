@@ -2,7 +2,7 @@ import { openai } from "@ai-sdk/openai";
 import { streamText, generateText, generateObject } from "ai";
 import { z } from "zod";
 import { prisma } from "../../lib/db";
-import { supabase } from "../../lib/supabase";
+import { supabase, STORAGE_BUCKET } from "../../lib/supabase";
 import { WorkspaceRole } from "@syncra/validators";
 
 export class AiService {
@@ -159,9 +159,8 @@ Project: ${project?.name || "Unknown"}`,
     }
 
     // 2. Fetch the file content from Supabase
-    // We assume BUCKET_NAME is "workspace-files" as used in file.service.ts
     const { data, error } = await supabase.storage
-      .from("workspace-files")
+      .from(STORAGE_BUCKET)
       .download(file.storagePath);
 
     if (error || !data) {

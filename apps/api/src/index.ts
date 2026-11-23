@@ -26,6 +26,29 @@ import { SocketService } from "./modules/socket/socket.service";
 // App bootstrap
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Startup environment validation (P-8 / S-10)
+// ---------------------------------------------------------------------------
+
+const REQUIRED_ENV_VARS = [
+  "DATABASE_URL",
+  "JWT_SECRET",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+] as const;
+
+function validateEnv() {
+  const missing = REQUIRED_ENV_VARS.filter(key => !process.env[key]);
+  if (missing.length > 0) {
+    console.error("\n❌  STARTUP FAILED — Missing required environment variables:");
+    missing.forEach(key => console.error(`    • ${key}`));
+    console.error("\n    Set these in your .env file and restart.\n");
+    process.exit(1);
+  }
+}
+
+validateEnv();
+
 const app = express();
 const PORT = process.env["PORT"] ?? 4000;
 const httpServer = createServer(app);
@@ -46,7 +69,7 @@ app.use(
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200,
+    max: process.env["NODE_ENV"] === "production" ? 200 : 10000,
     standardHeaders: "draft-7",
     legacyHeaders: false,
     message: { success: false, error: "Too many requests — please try again later." },
@@ -124,7 +147,9 @@ app.use((err: any, _req: any, res: any, _next: any) => {
 
 process.on("unhandledRejection", (reason: any) => {
   console.error("[FATAL] Unhandled Promise Rejection:", reason?.message ?? reason);
-  // Do NOT crash the server in production — log and continue
+  // An unhandled rejection that escapes Express indicates a programming error.
+  // Exit so the process manager (e.g. PM2, Docker) can restart cleanly.
+  process.exit(1);
 });
 
 process.on("uncaughtException", (err: Error) => {

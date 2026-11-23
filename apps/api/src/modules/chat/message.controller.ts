@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { MessageService } from "./message.service";
+import { NotificationController } from "../notification/notification.controller";
 import { SocketService } from "../socket/socket.service";
 import { SOCKET_EVENTS } from "@syncra/validators";
 import { sendMessageSchema, editMessageSchema, listMessagesSchema, reactMessageSchema, typingSchema } from "@syncra/validators";
@@ -34,14 +35,25 @@ export class MessageController {
       const userId = req.user!.userId;
       const workspaceId = req.user!.workspaceId!;
 
-      const message = await MessageService.send(workspaceId, userId, parsed.data);
+      const { message, mentionedUserIds } = await MessageService.send(workspaceId, userId, parsed.data);
 
-      // Broadcast to the workspace room. In Phase 9 the frontend will
-      // filter by channelId on the client side.
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      // Broadcast the new message to the workspace room
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_SENT, {
         actorId: userId,
-        data: { type: "message_new", message },
+        data: message,
       });
+
+      // Dispatch mention notifications for each mentioned user.
+      // Fire-and-forget — we do not await these so the response is not delayed.
+      // Errors in notification delivery do not fail the send operation.
+      for (const mentionedUserId of mentionedUserIds) {
+        NotificationController.createAndDeliver(workspaceId, mentionedUserId, {
+          type: "MENTION",
+          title: "New Mention",
+          body: `${message.author.displayName} mentioned you in a message.`,
+          link: `/workspaces/${workspaceId}/chat/${parsed.data.channelId}`,
+        }).catch(err => console.error("[MessageController] mention notification failed:", err));
+      }
 
       res.status(201).json({ success: true, data: message });
     } catch (error: any) {
@@ -63,9 +75,9 @@ export class MessageController {
 
       const message = await MessageService.edit(messageId, workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_UPDATED, {
         actorId: userId,
-        data: { type: "message_updated", message },
+        data: message,
       });
 
       res.status(200).json({ success: true, data: message });
@@ -87,9 +99,9 @@ export class MessageController {
 
       const message = await MessageService.delete(messageId, workspaceId, userId, isAdmin);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_DELETED, {
         actorId: userId,
-        data: { type: "message_deleted", messageId: message.id, channelId: message.channelId },
+        data: { messageId: message.id, channelId: message.channelId },
       });
 
       res.status(200).json({ success: true, data: { message: "Message deleted" } });
@@ -132,9 +144,9 @@ export class MessageController {
       // Re-fetch the message so we can broadcast its updated state
       const updatedMessage = await MessageService.getById(messageId, workspaceId);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_UPDATED, {
         actorId: userId,
-        data: { type: "message_updated", message: updatedMessage },
+        data: { type: "reaction_toggled", message: updatedMessage },
       });
 
       res.status(200).json({ success: true, data: result });

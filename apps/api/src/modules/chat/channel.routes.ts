@@ -24,28 +24,28 @@ router.get("/:channelId", ChannelController.getOne);
 // Create a public or private channel
 router.post(
   "/",
-  requirePermission(PERMISSIONS.PROJECT_CREATE), // Reuse PROJECT_CREATE as "can create team resources"
+  requirePermission(PERMISSIONS.CHANNEL_CREATE),
   ChannelController.create
 );
 
 // Update a channel (rename/description)
 router.put(
   "/:channelId",
-  requirePermission(PERMISSIONS.PROJECT_UPDATE),
+  requirePermission(PERMISSIONS.CHANNEL_UPDATE),
   ChannelController.update
 );
 
 // Archive a channel (soft-delete)
 router.post(
   "/:channelId/archive",
-  requirePermission(PERMISSIONS.PROJECT_UPDATE),
+  requirePermission(PERMISSIONS.CHANNEL_UPDATE),
   ChannelController.archive
 );
 
 // Delete a channel permanently
 router.delete(
   "/:channelId",
-  requirePermission(PERMISSIONS.PROJECT_DELETE),
+  requirePermission(PERMISSIONS.CHANNEL_DELETE),
   ChannelController.remove
 );
 

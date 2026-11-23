@@ -1,9 +1,6 @@
 import { prisma } from "../../lib/db";
 import { RegisterFileInput, RenameFileInput, MoveFileInput } from "@syncra/validators";
-import { supabase } from "../../lib/supabase";
-
-// The storage bucket name defined in Supabase
-const BUCKET_NAME = "workspace-files"; 
+import { supabase, STORAGE_BUCKET } from "../../lib/supabase";
 
 export class FileService {
   
@@ -32,7 +29,7 @@ export class FileService {
     const storagePath = `${workspaceId}/${uniqueId}-${fileName.replace(/\s+/g, "_")}`;
 
     const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
+      .from(STORAGE_BUCKET)
       .createSignedUploadUrl(storagePath);
 
     if (error || !data) {
@@ -49,6 +46,13 @@ export class FileService {
    * Register a file in the database AFTER it has been successfully uploaded to Supabase.
    */
   static async registerFile(workspaceId: string, actorId: string, data: RegisterFileInput) {
+    // Validate that the storagePath starts with this workspace's ID prefix.
+    // The server generates paths as `{workspaceId}/{uniqueId}-{filename}` in getUploadUrl().
+    // Rejecting paths that don't match prevents cross-workspace path poisoning.
+    if (!data.storagePath.startsWith(`${workspaceId}/`)) {
+      throw new Error("Invalid storagePath: path does not belong to this workspace.");
+    }
+
     if (data.folderId) {
       await prisma.folder.findUniqueOrThrow({
         where: { id: data.folderId, workspaceId }
@@ -77,7 +81,7 @@ export class FileService {
     });
 
     const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
+      .from(STORAGE_BUCKET)
       .createSignedUrl(file.storagePath, 60 * 60); // 1 hour expiry
 
     if (error || !data) {
@@ -124,14 +128,13 @@ export class FileService {
       where: { id: fileId, workspaceId }
     });
 
-    // 1. Delete from Supabase
+    // 1. Delete from Supabase first — if this fails we abort to prevent ghost files
     const { error } = await supabase.storage
-      .from(BUCKET_NAME)
+      .from(STORAGE_BUCKET)
       .remove([file.storagePath]);
       
     if (error) {
-      console.error(`Failed to delete file from storage: ${error.message}`);
-      // Proceeding with DB deletion anyway to avoid ghost records if storage fails
+      throw new Error(`Failed to delete file from storage: ${error.message}. Database record preserved.`);
     }
 
     // 2. Delete from DB

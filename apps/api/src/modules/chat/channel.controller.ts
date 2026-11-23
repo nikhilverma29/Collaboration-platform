@@ -44,9 +44,9 @@ export class ChannelController {
 
       const channel = await ChannelService.create(workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.CHANNEL_CREATED, {
         actorId: userId,
-        data: { type: "channel_created", channel },
+        data: channel,
       });
 
       res.status(201).json({ success: true, data: channel });
@@ -69,9 +69,9 @@ export class ChannelController {
 
       const channel = await ChannelService.update(channelId, workspaceId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.CHANNEL_UPDATED, {
         actorId: userId,
-        data: { type: "channel_updated", channel },
+        data: channel,
       });
 
       res.status(200).json({ success: true, data: channel });
@@ -86,6 +86,12 @@ export class ChannelController {
       const channelId = req.params.channelId as string;
 
       const channel = await ChannelService.archive(channelId, workspaceId);
+
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.CHANNEL_ARCHIVED, {
+        actorId: req.user!.userId,
+        data: { channelId },
+      });
+
       res.status(200).json({ success: true, data: channel });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
@@ -98,6 +104,12 @@ export class ChannelController {
       const channelId = req.params.channelId as string;
 
       await ChannelService.delete(channelId, workspaceId);
+
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.CHANNEL_DELETED, {
+        actorId: req.user!.userId,
+        data: { channelId },
+      });
+
       res.status(200).json({ success: true, data: { message: "Channel deleted" } });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
@@ -121,9 +133,9 @@ export class ChannelController {
 
       const member = await ChannelService.addMember(channelId, targetUserId);
 
-      SocketService.broadcastToWorkspace(actorWorkspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(actorWorkspaceId, SOCKET_EVENTS.CHANNEL_UPDATED, {
         actorId: req.user!.userId,
-        data: { type: "channel_member_added", channelId, userId: targetUserId },
+        data: { type: "member_added", channelId, userId: targetUserId },
       });
 
       res.status(201).json({ success: true, data: member });

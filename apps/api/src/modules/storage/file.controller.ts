@@ -48,9 +48,9 @@ export class FileController {
 
       const file = await FileService.registerFile(workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FILE_UPLOADED, {
         actorId: userId,
-        data: { type: "file_uploaded", file },
+        data: file,
       });
 
       res.status(201).json({ success: true, data: file });
@@ -85,9 +85,9 @@ export class FileController {
 
       const file = await FileService.rename(fileId, workspaceId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FILE_RENAMED, {
         actorId: userId,
-        data: { type: "file_renamed", file },
+        data: file,
       });
 
       res.status(200).json({ success: true, data: file });
@@ -110,9 +110,9 @@ export class FileController {
 
       const file = await FileService.move(fileId, workspaceId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FILE_MOVED, {
         actorId: userId,
-        data: { type: "file_moved", file },
+        data: file,
       });
 
       res.status(200).json({ success: true, data: file });
@@ -129,9 +129,9 @@ export class FileController {
 
       await FileService.delete(fileId, workspaceId);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FILE_DELETED, {
         actorId: userId,
-        data: { type: "file_deleted", fileId },
+        data: { fileId },
       });
 
       res.status(200).json({ success: true, data: { message: "File deleted" } });

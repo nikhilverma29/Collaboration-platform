@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { ProjectService } from "./project.service";
 import { ColumnService } from "./column.service";
+import { WorkspaceService } from "../workspace/workspace.service";
 import { createProjectSchema, updateProjectSchema, createColumnSchema, updateColumnSchema } from "@syncra/validators";
 import { AuditService } from "../audit/audit.service";
 import { SocketService } from "../socket/socket.service";
@@ -87,9 +88,9 @@ export class ProjectController {
         metadata: parsed.data,
       });
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.PROJECT_UPDATED, {
         actorId: userId,
-        data: { type: "project_updated", project },
+        data: project,
       });
 
       res.status(200).json({ success: true, data: project });
@@ -113,6 +114,11 @@ export class ProjectController {
         targetId: projectId,
       });
 
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.PROJECT_ARCHIVED, {
+        actorId: userId,
+        data: { projectId },
+      });
+
       res.status(200).json({ success: true, data: project });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
@@ -132,6 +138,11 @@ export class ProjectController {
         actorId: userId,
         action: "project.delete",
         targetId: projectId,
+      });
+
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.PROJECT_DELETED, {
+        actorId: userId,
+        data: { projectId },
       });
 
       res.status(200).json({ success: true, data: { message: "Project deleted" } });
@@ -163,6 +174,13 @@ export class ProjectController {
 
       if (!targetUserId) {
         res.status(400).json({ success: false, error: "userId is required" });
+        return;
+      }
+
+      // Verify the target user is a member of this workspace before adding to project
+      const membership = await WorkspaceService.getMembership(targetUserId, workspaceId);
+      if (!membership) {
+        res.status(400).json({ success: false, error: "User is not a member of this workspace" });
         return;
       }
 
@@ -211,8 +229,9 @@ export class ProjectController {
 
   static async listColumns(req: Request, res: Response) {
     try {
+      const workspaceId = req.user!.workspaceId!;
       const boardId = req.params.boardId as string;
-      const columns = await ColumnService.listByBoard(boardId);
+      const columns = await ColumnService.listByBoard(boardId, workspaceId);
       res.status(200).json({ success: true, data: columns });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
@@ -227,8 +246,9 @@ export class ProjectController {
         return;
       }
 
+      const workspaceId = req.user!.workspaceId!;
       const boardId = req.params.boardId as string;
-      const column = await ColumnService.create(boardId, parsed.data);
+      const column = await ColumnService.create(boardId, workspaceId, parsed.data);
       res.status(201).json({ success: true, data: column });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
@@ -243,8 +263,9 @@ export class ProjectController {
         return;
       }
 
+      const workspaceId = req.user!.workspaceId!;
       const columnId = req.params.columnId as string;
-      const column = await ColumnService.update(columnId, parsed.data);
+      const column = await ColumnService.update(columnId, workspaceId, parsed.data);
       res.status(200).json({ success: true, data: column });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
@@ -253,8 +274,9 @@ export class ProjectController {
 
   static async deleteColumn(req: Request, res: Response) {
     try {
+      const workspaceId = req.user!.workspaceId!;
       const columnId = req.params.columnId as string;
-      await ColumnService.delete(columnId);
+      await ColumnService.delete(columnId, workspaceId);
       res.status(200).json({ success: true, data: { message: "Column deleted" } });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });

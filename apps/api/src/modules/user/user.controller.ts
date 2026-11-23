@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { UserService } from "./user.service";
-import { updateProfileSchema, changePasswordSchema } from "@syncra/validators";
+import { updateProfileSchema, changePasswordSchema, z } from "@syncra/validators";
 
 export class UserController {
   static getProfile = async (req: Request, res: Response, next: NextFunction) => {
@@ -25,10 +25,24 @@ export class UserController {
   static updateAvatar = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { avatarUrl } = req.body;
-      if (!avatarUrl || typeof avatarUrl !== "string") {
-        throw new Error("Invalid avatarUrl");
+
+      // Validate: must be a string, a valid URL, and use HTTPS.
+      // Rejects javascript: URLs, plain strings, and non-HTTPS origins.
+      const urlValidation = z
+        .string()
+        .url("avatarUrl must be a valid URL")
+        .refine(
+          (url) => url.startsWith("https://"),
+          "avatarUrl must use HTTPS"
+        );
+
+      const result = urlValidation.safeParse(avatarUrl);
+      if (!result.success) {
+        res.status(400).json({ success: false, error: result.error.issues[0]?.message ?? "Invalid avatarUrl" });
+        return;
       }
-      const user = await UserService.updateAvatar(req.user!.userId, avatarUrl);
+
+      const user = await UserService.updateAvatar(req.user!.userId, result.data);
       res.status(200).json({ success: true, data: user });
     } catch (err) {
       next(err);

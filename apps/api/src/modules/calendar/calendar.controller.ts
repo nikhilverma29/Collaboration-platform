@@ -70,9 +70,9 @@ export class CalendarController {
       }
       const meeting = await CalendarService.createMeeting(req.user!.workspaceId!, req.user!.userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(req.user!.workspaceId!, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(req.user!.workspaceId!, SOCKET_EVENTS.MEETING_CREATED, {
         actorId: req.user!.userId,
-        data: { type: "meeting_created", meeting },
+        data: meeting,
       });
 
       res.status(201).json({ success: true, data: meeting });
@@ -104,9 +104,9 @@ export class CalendarController {
         parsed.data
       );
 
-      SocketService.broadcastToWorkspace(req.user!.workspaceId!, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(req.user!.workspaceId!, SOCKET_EVENTS.MEETING_CREATED, {
         actorId: req.user!.userId,
-        data: { type: "meeting_rsvp", rsvp },
+        data: { type: "rsvp_updated", rsvp },
       });
 
       res.status(200).json({ success: true, data: rsvp });
@@ -118,6 +118,12 @@ export class CalendarController {
   static async cancelMeeting(req: Request, res: Response) {
     try {
       await CalendarService.cancelMeeting(req.user!.workspaceId!, req.user!.userId, req.params.meetingId as string);
+
+      SocketService.broadcastToWorkspace(req.user!.workspaceId!, SOCKET_EVENTS.MEETING_CANCELLED, {
+        actorId: req.user!.userId,
+        data: { meetingId: req.params.meetingId },
+      });
+
       res.status(200).json({ success: true, message: "Meeting cancelled" });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });

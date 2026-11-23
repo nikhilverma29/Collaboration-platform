@@ -53,9 +53,9 @@ export class TaskController {
 
       const task = await TaskService.create(workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.TASK_CREATED, {
         actorId: userId,
-        data: { type: "task_created", task },
+        data: task,
       });
 
       res.status(201).json({ success: true, data: task });
@@ -78,9 +78,9 @@ export class TaskController {
 
       const task = await TaskService.update(taskId, workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.TASK_UPDATED, {
         actorId: userId,
-        data: { type: "task_updated", task },
+        data: task,
       });
 
       res.status(200).json({ success: true, data: task });
@@ -103,9 +103,9 @@ export class TaskController {
 
       const task = await TaskService.move(taskId, workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.TASK_MOVED, {
         actorId: userId,
-        data: { type: "task_moved", task },
+        data: task,
       });
 
       res.status(200).json({ success: true, data: task });
@@ -122,9 +122,9 @@ export class TaskController {
 
       await TaskService.delete(taskId, workspaceId, userId);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.TASK_DELETED, {
         actorId: userId,
-        data: { type: "task_deleted", taskId },
+        data: { taskId },
       });
 
       res.status(200).json({ success: true, data: { message: "Task deleted" } });

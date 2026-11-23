@@ -74,6 +74,19 @@ export class CalendarService {
 
     // Include the organizer as an accepted participant automatically
     const participantIds = new Set([...data.participantIds, organizerId]);
+    const participantIdArray = Array.from(participantIds);
+
+    // Verify all participants are members of this workspace
+    const members = await prisma.workspaceMember.findMany({
+      where: { workspaceId, userId: { in: participantIdArray } },
+      select: { userId: true },
+    });
+
+    if (members.length !== participantIdArray.length) {
+      const foundIds = new Set(members.map(m => m.userId));
+      const invalid = participantIdArray.filter(id => !foundIds.has(id));
+      throw new Error(`The following users are not members of this workspace: ${invalid.join(", ")}`);
+    }
 
     return prisma.meeting.create({
       data: {
@@ -84,7 +97,7 @@ export class CalendarService {
         startTime: data.startTime,
         endTime: data.endTime,
         participants: {
-          create: Array.from(participantIds).map(userId => ({
+          create: participantIdArray.map(userId => ({
             userId,
             status: userId === organizerId ? "ACCEPTED" : "PENDING",
           })),

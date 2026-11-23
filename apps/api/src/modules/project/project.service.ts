@@ -83,7 +83,7 @@ export class ProjectService {
    */
   static async update(projectId: string, workspaceId: string, data: UpdateProjectInput) {
     return prisma.project.update({
-      where: { id: projectId },
+      where: { id: projectId, workspaceId },
       data,
     });
   }
@@ -93,7 +93,7 @@ export class ProjectService {
    */
   static async archive(projectId: string, workspaceId: string) {
     return prisma.project.update({
-      where: { id: projectId },
+      where: { id: projectId, workspaceId },
       data: { isArchived: true },
     });
   }
@@ -103,7 +103,7 @@ export class ProjectService {
    */
   static async delete(projectId: string, workspaceId: string) {
     return prisma.project.delete({
-      where: { id: projectId },
+      where: { id: projectId, workspaceId },
     });
   }
 

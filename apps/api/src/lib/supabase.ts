@@ -8,3 +8,11 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
+
+/**
+ * Single source of truth for the Supabase storage bucket name.
+ * All storage services must import this constant rather than hardcoding
+ * the string independently. Renaming the bucket only requires changing
+ * this one line.
+ */
+export const STORAGE_BUCKET = "workspace-files";

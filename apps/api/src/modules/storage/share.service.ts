@@ -1,8 +1,6 @@
 import { prisma } from "../../lib/db";
 import { CreateShareLinkInput } from "@syncra/validators";
-import { supabase } from "../../lib/supabase";
-
-const BUCKET_NAME = "workspace-files"; 
+import { supabase, STORAGE_BUCKET } from "../../lib/supabase";
 
 export class ShareLinkService {
   
@@ -86,7 +84,7 @@ export class ShareLinkService {
 
     // Generate a temporary Supabase URL (valid for 5 mins) so the client can download it
     const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
+      .from(STORAGE_BUCKET)
       .createSignedUrl(link.file.storagePath, 60 * 5);
 
     if (error || !data) {

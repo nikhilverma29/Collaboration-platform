@@ -1,6 +1,12 @@
 import { prisma } from "../../lib/db";
 import { CreateWorkspaceInput, JoinWorkspaceInput } from "@syncra/validators";
 
+export type WorkspaceMembership = {
+  workspaceId: string;
+  userId: string;
+  role: string;
+};
+
 export class WorkspaceService {
   /**
    * Creates a new workspace and automatically adds the creator as the OWNER.
@@ -92,6 +98,33 @@ export class WorkspaceService {
       workspace: m.workspace
     }));
   }
+  /**
+   * Returns a user's membership record for a given workspace.
+   * Used by the workspace switch flow to verify access and read the user's role.
+   * Returns null if the user is not a member.
+   */
+  static async getMembership(userId: string, workspaceId: string): Promise<WorkspaceMembership | null> {
+    return prisma.workspaceMember.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      select: { workspaceId: true, userId: true, role: true },
+    });
+  }
+
+  /**
+   * Updates the workspace name.
+   * Returns both the old and updated workspace so the caller can log the change.
+   */
+  static async update(workspaceId: string, name: string) {
+    const oldWorkspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+
+    const workspace = await prisma.workspace.update({
+      where: { id: workspaceId },
+      data: { name },
+    });
+
+    return { oldWorkspace, workspace };
+  }
+
   /**
    * Gets aggregated stats for the workspace dashboard.
    */

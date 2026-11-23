@@ -1,15 +1,14 @@
 import { prisma } from "../../lib/db";
 import { CreateNotificationInput } from "@syncra/validators";
-import { SocketService } from "../socket/socket.service";
-import { SOCKET_EVENTS } from "@syncra/validators";
 
 export class NotificationService {
   /**
-   * Internal method to create a notification and broadcast it via WebSockets.
-   * Not exposed as a REST endpoint directly (notifications are system-generated).
+   * Creates a notification record in the database.
+   * Does NOT emit a socket event — the caller (controller or event handler)
+   * is responsible for real-time delivery after calling this method.
    */
   static async create(workspaceId: string, data: CreateNotificationInput) {
-    const notification = await prisma.notification.create({
+    return prisma.notification.create({
       data: {
         workspaceId,
         userId: data.userId,
@@ -19,11 +18,6 @@ export class NotificationService {
         link: data.link,
       }
     });
-
-    // Real-time toast
-    SocketService.sendToUser(data.userId, SOCKET_EVENTS.NOTIFICATION_RECEIVED, notification);
-
-    return notification;
   }
 
   static async list(workspaceId: string, userId: string) {
@@ -55,3 +49,4 @@ export class NotificationService {
     });
   }
 }
+

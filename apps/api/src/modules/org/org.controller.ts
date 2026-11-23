@@ -33,9 +33,9 @@ export class OrgController {
       // Note: Ideally require ADMIN/OWNER permissions in routes for this.
       const updated = await OrgService.setManager(workspaceId, targetUserId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.ORG_CHART_UPDATED, {
         actorId: req.user!.userId,
-        data: { type: "org_updated", user: updated },
+        data: updated,
       });
 
       res.status(200).json({ success: true, data: updated });

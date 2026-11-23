@@ -33,6 +33,11 @@ export const PERMISSIONS = {
   DOCUMENT_CREATE: "document:create",
   DOCUMENT_UPDATE: "document:update",
   DOCUMENT_DELETE: "document:delete",
+
+  // Chat & Messaging
+  CHANNEL_CREATE: "channel:create",
+  CHANNEL_UPDATE: "channel:update",
+  CHANNEL_DELETE: "channel:delete",
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
@@ -63,6 +68,9 @@ export const ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
     PERMISSIONS.DOCUMENT_CREATE,
     PERMISSIONS.DOCUMENT_UPDATE,
     PERMISSIONS.DOCUMENT_DELETE,
+    PERMISSIONS.CHANNEL_CREATE,
+    PERMISSIONS.CHANNEL_UPDATE,
+    PERMISSIONS.CHANNEL_DELETE,
   ],
   
   // MANAGER can manage operational data and invite users, but cannot manage admins/workspace settings.
@@ -80,14 +88,19 @@ export const ROLE_PERMISSIONS: Record<WorkspaceRole, Permission[]> = {
     PERMISSIONS.DOCUMENT_CREATE,
     PERMISSIONS.DOCUMENT_UPDATE,
     PERMISSIONS.DOCUMENT_DELETE,
+    PERMISSIONS.CHANNEL_CREATE,
+    PERMISSIONS.CHANNEL_UPDATE,
   ],
   
   // EMPLOYEE can only interact with tasks and documents, cannot manage structure.
   [WorkspaceRole.EMPLOYEE]: [
     PERMISSIONS.TASK_CREATE,
     PERMISSIONS.TASK_UPDATE,
-    
+
     PERMISSIONS.DOCUMENT_CREATE,
     PERMISSIONS.DOCUMENT_UPDATE,
+
+    // All employees can create and use channels/DMs
+    PERMISSIONS.CHANNEL_CREATE,
   ],
 };

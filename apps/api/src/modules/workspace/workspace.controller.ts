@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { WorkspaceService } from "./workspace.service";
 import { createWorkspaceSchema, joinWorkspaceSchema } from "@syncra/validators";
-import { prisma } from "../../lib/db";
 import { signAccessToken } from "../../lib/jwt";
 import { AuditService } from "../audit/audit.service";
 import { SocketService } from "../socket/socket.service";
@@ -76,10 +75,8 @@ export class WorkspaceController {
         return;
       }
 
-      // Verify membership to ensure they are allowed to switch into this tenant
-      const membership = await prisma.workspaceMember.findUnique({
-        where: { workspaceId_userId: { workspaceId, userId } }
-      });
+      // Verify membership via service — controller does not touch prisma directly
+      const membership = await WorkspaceService.getMembership(userId, workspaceId);
       
       if (!membership) {
         res.status(403).json({ success: false, error: "Forbidden - Not a member of this workspace" });
@@ -123,12 +120,8 @@ export class WorkspaceController {
       const workspaceId = req.params.workspaceId as string;
       const { name } = req.body;
       
-      const oldWorkspace = await prisma.workspace.findUnique({ where: { id: workspaceId }});
-      
-      const workspace = await prisma.workspace.update({
-        where: { id: workspaceId },
-        data: { name }
-      });
+      // All data access goes through the service — controller has no prisma import
+      const { oldWorkspace, workspace } = await WorkspaceService.update(workspaceId, name);
       
       // Write Audit Log
       await AuditService.log({

@@ -4,6 +4,38 @@ import { registerSchema, loginSchema } from "@syncra/validators";
 import { signAccessToken } from "../../lib/jwt";
 import { setAuthCookies, clearAuthCookies } from "../../lib/cookie";
 
+/**
+ * Sends a password reset email to the user.
+ *
+ * PRODUCTION TODO: Replace the console.log with your transactional email provider.
+ * Recommended providers: Resend (resend.com), SendGrid, or Nodemailer + SMTP.
+ *
+ * The reset link should point to your frontend's reset-password page,
+ * which will call POST /api/auth/reset-password with { token, newPassword }.
+ */
+async function sendPasswordResetEmail(email: string, token: string): Promise<void> {
+  const resetLink = `${process.env["CLIENT_URL"] ?? "http://localhost:5173"}/reset-password?token=${token}`;
+
+  if (process.env["NODE_ENV"] !== "production") {
+    // In development: log to console so the flow can be tested without an email provider
+    console.log(`\n📧  [DEV] Password reset requested for: ${email}`);
+    console.log(`    Reset link: ${resetLink}\n`);
+    return;
+  }
+
+  // TODO: integrate email provider here
+  // Example with Resend:
+  // await resend.emails.send({
+  //   from: "noreply@yourdomain.com",
+  //   to: email,
+  //   subject: "Reset your Syncra password",
+  //   html: `<a href="${resetLink}">Click here to reset your password</a>`,
+  // });
+
+  throw new Error("Email provider not configured. Set up an email provider in auth.controller.ts.");
+}
+
+
 export class AuthController {
   /**
    * Register a new user and create an initial session.
@@ -136,14 +168,21 @@ export class AuthController {
       }
       
       const token = await AuthService.forgotPassword(email);
+
+      // Send the reset token via email — never expose it in the HTTP response.
+      // token is null when the email has no account; we still return the same
+      // generic response to prevent user enumeration.
+      // TODO: Replace this stub with your chosen email provider (Resend, SendGrid, Nodemailer).
+      if (token !== null) {
+        await sendPasswordResetEmail(email, token);
+      }
       
+      // Always return the same generic message regardless of whether the email exists.
+      // This prevents user enumeration — an attacker cannot tell which emails are registered.
       res.status(200).json({
         success: true,
         data: {
-          message: "If an account exists, a reset link has been sent.",
-          // NOTE: Only doing this because we don't have an email provider configured in this portfolio.
-          // In a real application, NEVER return the token in the response!
-          _dev_token: token,
+          message: "If an account with that email exists, a password reset link has been sent.",
         }
       });
     } catch (err: any) {

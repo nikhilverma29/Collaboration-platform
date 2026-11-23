@@ -48,9 +48,9 @@ export class FolderController {
 
       const folder = await FolderService.create(workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FOLDER_CREATED, {
         actorId: userId,
-        data: { type: "folder_created", folder },
+        data: folder,
       });
 
       res.status(201).json({ success: true, data: folder });
@@ -73,9 +73,9 @@ export class FolderController {
 
       const folder = await FolderService.rename(folderId, workspaceId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FOLDER_RENAMED, {
         actorId: userId,
-        data: { type: "folder_renamed", folder },
+        data: folder,
       });
 
       res.status(200).json({ success: true, data: folder });
@@ -98,9 +98,9 @@ export class FolderController {
 
       const folder = await FolderService.move(folderId, workspaceId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FOLDER_MOVED, {
         actorId: userId,
-        data: { type: "folder_moved", folder },
+        data: folder,
       });
 
       res.status(200).json({ success: true, data: folder });
@@ -117,9 +117,9 @@ export class FolderController {
 
       await FolderService.delete(folderId, workspaceId);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.WORKSPACE_UPDATED, {
+      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.FOLDER_DELETED, {
         actorId: userId,
-        data: { type: "folder_deleted", folderId },
+        data: { folderId },
       });
 
       res.status(200).json({ success: true, data: { message: "Folder deleted" } });
