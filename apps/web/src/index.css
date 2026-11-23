@@ -2218,6 +2218,9 @@ img, svg, video { display: block; max-width: 100%; }
   overflow: hidden;
   max-height: calc(100vh - 14rem);
 }
+.kanban-column.is-drag-over {
+  border-color: var(--accent-brand);
+}
 
 .kanban-col-header {
   display: flex;
@@ -2293,6 +2296,19 @@ img, svg, video { display: block; max-width: 100%; }
 .task-card:hover {
   border-color: var(--border-strong);
   box-shadow: var(--shadow-sm);
+}
+
+.task-card.is-dragging {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+
+.task-card.drop-target-top {
+  border-top: 2px solid var(--accent-brand);
+}
+
+.task-card.drop-target-bottom {
+  border-bottom: 2px solid var(--accent-brand);
 }
 
 .task-card-header {

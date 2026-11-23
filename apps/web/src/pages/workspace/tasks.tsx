@@ -101,10 +101,26 @@ function UserAvatar({ initials, name, size = 20 }: { initials?: string; name?: s
 // Task Card (Kanban)
 // ---------------------------------------------------------------------------
 
-function TaskCard({ task, onSelect, onStatusChange }: {
+function TaskCard({
+  task,
+  onSelect,
+  onStatusChange,
+  isDragging,
+  dropTargetEdge,
+  onDragStart,
+  onDragEnd,
+  onDragOverCard,
+  onDropCard,
+}: {
   task: Task
   onSelect: (t: Task) => void
   onStatusChange: (taskId: string, status: TaskStatus) => void
+  isDragging?: boolean
+  dropTargetEdge?: 'top' | 'bottom' | null
+  onDragStart: (taskId: string) => void
+  onDragEnd: () => void
+  onDragOverCard: (taskId: string, edge: 'top' | 'bottom') => void
+  onDropCard: (taskId: string) => void
 }) {
   const done = task.status === 'DONE' || task.status === 'CANCELLED'
   const assigneeInitials = task.assignee?.displayName
@@ -119,9 +135,29 @@ function TaskCard({ task, onSelect, onStatusChange }: {
 
   return (
     <div
-      className="task-card"
+      className={`task-card${isDragging ? ' is-dragging' : ''}${
+        dropTargetEdge === 'top' ? ' drop-target-top' : dropTargetEdge === 'bottom' ? ' drop-target-bottom' : ''
+      }`}
       onClick={() => onSelect(task)}
       draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/plain', task.id)
+        e.dataTransfer.effectAllowed = 'move'
+        onDragStart(task.id)
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const rect = e.currentTarget.getBoundingClientRect()
+        const isTop = (e.clientY - rect.top) < (rect.height / 2)
+        onDragOverCard(task.id, isTop ? 'top' : 'bottom')
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onDropCard(task.id)
+      }}
     >
       {/* Header row: status dot + priority + menu */}
       <div className="task-card-header">
@@ -233,16 +269,41 @@ function TaskCard({ task, onSelect, onStatusChange }: {
 // Kanban Column
 // ---------------------------------------------------------------------------
 
-function KanbanColumn({ column, tasks, onAddTask, onSelectTask, onStatusChange, isFiltered }: {
+function KanbanColumn({
+  column,
+  tasks,
+  onAddTask,
+  onSelectTask,
+  onStatusChange,
+  isFiltered,
+  draggedTaskId,
+  dragOverTarget,
+  isDragOverCol,
+  onDragStartTask,
+  onDragEndTask,
+  onDragOverCard,
+  onDropOnCard,
+  onDragOverCol,
+  onDropOnCol,
+}: {
   column: Column
   tasks: Task[]
   onAddTask: (columnId: string) => void
   onSelectTask: (t: Task) => void
   onStatusChange: (taskId: string, status: TaskStatus) => void
   isFiltered?: boolean
+  draggedTaskId: string | null
+  dragOverTarget: { taskId: string; edge: 'top' | 'bottom' } | null
+  isDragOverCol: boolean
+  onDragStartTask: (taskId: string) => void
+  onDragEndTask: () => void
+  onDragOverCard: (colId: string, taskId: string, edge: 'top' | 'bottom') => void
+  onDropOnCard: (colId: string, taskId: string) => void
+  onDragOverCol: (colId: string) => void
+  onDropOnCol: (colId: string) => void
 }) {
   return (
-    <div className="kanban-column">
+    <div className={`kanban-column${isDragOverCol ? ' is-drag-over' : ''}`}>
       {/* Column header */}
       <div className="kanban-col-header">
         <span className="kanban-col-name">{column.name}</span>
@@ -259,13 +320,30 @@ function KanbanColumn({ column, tasks, onAddTask, onSelectTask, onStatusChange, 
       </div>
 
       {/* Task cards */}
-      <div className="kanban-col-body">
+      <div
+        className="kanban-col-body"
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          onDragOverCol(column.id)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          onDropOnCol(column.id)
+        }}
+      >
         {tasks.map(task => (
           <TaskCard
             key={task.id}
             task={task}
             onSelect={onSelectTask}
             onStatusChange={onStatusChange}
+            isDragging={draggedTaskId === task.id}
+            dropTargetEdge={dragOverTarget?.taskId === task.id ? dragOverTarget.edge : null}
+            onDragStart={onDragStartTask}
+            onDragEnd={onDragEndTask}
+            onDragOverCard={(taskId, edge) => onDragOverCard(column.id, taskId, edge)}
+            onDropCard={(taskId) => onDropOnCard(column.id, taskId)}
           />
         ))}
         {tasks.length === 0 && (
@@ -808,7 +886,7 @@ export function TasksPage() {
     projects, projectsLoading,
     activeProjectId, columns, tasksByColumn, columnsLoading,
     selectedTask,
-    fetchProjects, setActiveProject, createTask, updateTask, selectTask, fetchTaskById,
+    fetchProjects, setActiveProject, createTask, updateTask, moveTask, selectTask, fetchTaskById,
   } = useTaskStore()
 
   const channels = useChatStore((s) => s.channels)
@@ -817,6 +895,11 @@ export function TasksPage() {
   const [createTaskCol, setCreateTaskCol] = useState<string | null>(null)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [seeding, setSeeding]             = useState(false)
+
+  // ── Drag-and-drop state ──────────────────────────────────────────────
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
+  const [dragOverColId, setDragOverColId] = useState<string | null>(null)
+  const [dragOverTarget, setDragOverTarget] = useState<{ taskId: string; edge: 'top' | 'bottom' } | null>(null)
 
   // ── Collapsible status sections & inline add state for List View ───────
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
@@ -1183,6 +1266,130 @@ export function TasksPage() {
 
   const handleStatusChange = async (taskId: string, status: TaskStatus) => {
     await updateTask(taskId, { status })
+  }
+
+  // ── Drag & Drop Handlers (Fractional Indexing - ADR-002) ───────────────────
+  const handleDragStartTask = (taskId: string) => {
+    setDraggedTaskId(taskId)
+  }
+
+  const handleDragEndTask = () => {
+    setDraggedTaskId(null)
+    setDragOverColId(null)
+    setDragOverTarget(null)
+  }
+
+  const handleDragOverCard = (colId: string, taskId: string, edge: 'top' | 'bottom') => {
+    setDragOverColId(colId)
+    setDragOverTarget({ taskId, edge })
+  }
+
+  const handleDragOverCol = (colId: string) => {
+    setDragOverColId(colId)
+  }
+
+  const handleExecuteDrop = async (
+    targetColId: string,
+    targetCardId: string | null,
+    edge: 'top' | 'bottom' | null
+  ) => {
+    if (!draggedTaskId) return
+
+    // Locate source column and task instance
+    let sourceColId: string | null = null
+    let draggedTask: Task | undefined
+    for (const [colId, list] of Object.entries(tasksByColumn)) {
+      const match = list.find((t) => t.id === draggedTaskId)
+      if (match) {
+        sourceColId = colId
+        draggedTask = match
+        break
+      }
+    }
+
+    if (!sourceColId || !draggedTask) {
+      handleDragEndTask()
+      return
+    }
+
+    // Exclude the dragged task from neighbor position calculations
+    const targetColTasks = (tasksByColumn[targetColId] ?? []).filter((t) => t.id !== draggedTaskId)
+
+    let newPosition = 1024
+
+    if (targetColTasks.length === 0) {
+      // 1. Dropping into an empty column: seed position 1024
+      newPosition = 1024
+    } else if (targetCardId && edge) {
+      const targetIdx = targetColTasks.findIndex((t) => t.id === targetCardId)
+
+      if (targetIdx === -1) {
+        // Fallback: append after the last card
+        const lastTask = targetColTasks[targetColTasks.length - 1]
+        newPosition = lastTask.position + 1024
+      } else if (edge === 'top') {
+        if (targetIdx === 0) {
+          // 2. Dropping before first card (P_0): bisect (P_0 / 2) or decrement (P_0 - 1024)
+          const p0 = targetColTasks[0].position
+          newPosition = p0 > 0 ? p0 / 2 : p0 - 1024
+        } else {
+          // 4. Dropping between P_A (targetIdx - 1) and P_B (targetIdx): midpoint
+          const pA = targetColTasks[targetIdx - 1].position
+          const pB = targetColTasks[targetIdx].position
+          newPosition = (pA + pB) / 2
+        }
+      } else {
+        // edge === 'bottom'
+        if (targetIdx === targetColTasks.length - 1) {
+          // 3. Dropping after last card (P_N): increment by 1024
+          const pN = targetColTasks[targetIdx].position
+          newPosition = pN + 1024
+        } else {
+          // 4. Dropping between P_A (targetIdx) and P_B (targetIdx + 1): midpoint
+          const pA = targetColTasks[targetIdx].position
+          const pB = targetColTasks[targetIdx + 1].position
+          newPosition = (pA + pB) / 2
+        }
+      }
+    } else {
+      // Dropping onto column container: append after last card
+      const pN = targetColTasks[targetColTasks.length - 1].position
+      newPosition = pN + 1024
+    }
+
+    // Sync status if target column name maps to a standard workflow stage
+    const targetCol = columns.find((c) => c.id === targetColId)
+    if (targetCol) {
+      const lower = targetCol.name.toLowerCase()
+      let mappedStatus: TaskStatus | undefined
+      if (lower.includes('progress') || lower.includes('doing') || lower.includes('active')) mappedStatus = 'IN_PROGRESS'
+      else if (lower.includes('review') || lower.includes('testing') || lower.includes('qa')) mappedStatus = 'IN_REVIEW'
+      else if (lower.includes('done') || lower.includes('complete') || lower.includes('finish')) mappedStatus = 'DONE'
+      else if (lower.includes('todo') || lower.includes('to do') || lower.includes('backlog')) mappedStatus = 'TODO'
+
+      if (mappedStatus && mappedStatus !== draggedTask.status) {
+        updateTask(draggedTaskId, { status: mappedStatus }).catch(() => {})
+      }
+    }
+
+    const tId = draggedTaskId
+    handleDragEndTask()
+
+    try {
+      await moveTask(tId, sourceColId, targetColId, newPosition)
+    } catch {
+      // Revert is handled automatically by optimistic store error handling
+    }
+  }
+
+  const handleDropOnCard = (colId: string, taskId: string) => {
+    if (!draggedTaskId || !dragOverTarget) return
+    handleExecuteDrop(colId, taskId, dragOverTarget.edge)
+  }
+
+  const handleDropOnCol = (colId: string) => {
+    if (!draggedTaskId) return
+    handleExecuteDrop(colId, null, null)
   }
 
   // ── Cross-link: find the channel matching the active project by name ──
@@ -1612,6 +1819,15 @@ export function TasksPage() {
                 onSelectTask={handleSelectTask}
                 onStatusChange={handleStatusChange}
                 isFiltered={isFiltered}
+                draggedTaskId={draggedTaskId}
+                dragOverTarget={dragOverTarget}
+                isDragOverCol={dragOverColId === col.id}
+                onDragStartTask={handleDragStartTask}
+                onDragEndTask={handleDragEndTask}
+                onDragOverCard={handleDragOverCard}
+                onDropOnCard={handleDropOnCard}
+                onDragOverCol={handleDragOverCol}
+                onDropOnCol={handleDropOnCol}
               />
             ))}
           </div>
