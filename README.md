@@ -147,8 +147,8 @@ Every major engineering decision in Syncra is documented with its threat model, 
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/nikhilverma29/syncra.git
-cd syncra
+git clone https://github.com/nikhilverma29/Collaboration-platform.git
+cd Collaboration-platform
 npm install
 ```
 
