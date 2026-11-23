@@ -47,7 +47,7 @@ socket.join(`user:${userId}`);
 
 ---
 
-## 4. Consequences & Identified Flaws (`@BlindSpot`)
+## 4. Consequences & Security Analysis
 
 ### Positive
 * **Simple Room Topology:** Sockets join their rooms once upon connection. No dynamic room joining/leaving logic is required when users browse between channels or boards.

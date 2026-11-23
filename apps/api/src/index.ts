@@ -27,7 +27,7 @@ import { SocketService } from "./modules/socket/socket.service";
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Startup environment validation (P-8 / S-10)
+// Startup environment validation
 // ---------------------------------------------------------------------------
 
 const REQUIRED_ENV_VARS = [

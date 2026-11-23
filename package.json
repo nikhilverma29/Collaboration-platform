@@ -1,5 +1,5 @@
 {
-  "name": "Collaboration Platform",
+  "name": "syncra",
   "private": true,
   "scripts": {
     "build": "turbo run build",

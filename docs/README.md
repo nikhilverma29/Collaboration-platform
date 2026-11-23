@@ -1,6 +1,6 @@
 # Syncra — Architecture & Engineering Documentation
 
-Welcome to the engineering documentation for **Syncra** (*Project Ramayana*).
+Welcome to the engineering documentation for **Syncra**.
 
 This directory houses the foundational system design records, architectural decision history, and API interface specifications for the platform. It is structured to provide an immediate, rigorous technical breakdown of the system for new engineers, evaluators, and system architects.
 

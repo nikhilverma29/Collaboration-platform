@@ -209,4 +209,4 @@ The full contract is documented at [**`docs/openapi.yaml`**](docs/openapi.yaml).
 
 ## 🛡️ License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is open-source software licensed under the MIT License.

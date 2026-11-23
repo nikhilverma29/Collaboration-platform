@@ -1,11 +1,8 @@
 /**
  * @syncra/validators
  *
- * Shared Zod validation schemas used across apps/api and apps/web.
- * This file is the single export barrel for all validators.
- *
- * Phase 0: Intentionally minimal — the structure is established here
- * and schemas will be added per-phase as domain models are defined.
+ * Shared Zod validation schemas and TypeScript contracts used across apps/api and apps/web.
+ * Single export barrel for all domain validators.
  */
 
 export { z } from "zod";
