@@ -132,4 +132,84 @@ export class TaskController {
       res.status(400).json({ success: false, error: error.message });
     }
   }
+
+  // ── Subtasks ─────────────────────────────────────────────────────────────
+  static async listSubtasks(req: Request, res: Response) {
+    try {
+      const workspaceId = req.user!.workspaceId!;
+      const taskId = req.params.taskId as string;
+      const subtasks = await TaskService.listSubtasks(taskId, workspaceId);
+      res.status(200).json({ success: true, data: subtasks });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  }
+
+  static async createSubtask(req: Request, res: Response) {
+    try {
+      const workspaceId = req.user!.workspaceId!;
+      const taskId = req.params.taskId as string;
+      const { title } = req.body;
+      if (!title || typeof title !== "string") {
+        res.status(400).json({ success: false, error: "Title is required" });
+        return;
+      }
+      const subtask = await TaskService.createSubtask(taskId, workspaceId, title.trim());
+      res.status(201).json({ success: true, data: subtask });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  }
+
+  static async toggleSubtask(req: Request, res: Response) {
+    try {
+      const workspaceId = req.user!.workspaceId!;
+      const subtaskId = req.params.subtaskId as string;
+      const { done } = req.body;
+      const subtask = await TaskService.toggleSubtask(subtaskId, workspaceId, Boolean(done));
+      res.status(200).json({ success: true, data: subtask });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  }
+
+  static async deleteSubtask(req: Request, res: Response) {
+    try {
+      const workspaceId = req.user!.workspaceId!;
+      const subtaskId = req.params.subtaskId as string;
+      await TaskService.deleteSubtask(subtaskId, workspaceId);
+      res.status(200).json({ success: true, data: { message: "Subtask deleted" } });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  }
+
+  // ── Comments ─────────────────────────────────────────────────────────────
+  static async listComments(req: Request, res: Response) {
+    try {
+      const workspaceId = req.user!.workspaceId!;
+      const taskId = req.params.taskId as string;
+      const comments = await TaskService.listComments(taskId, workspaceId);
+      res.status(200).json({ success: true, data: comments });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  }
+
+  static async createComment(req: Request, res: Response) {
+    try {
+      const workspaceId = req.user!.workspaceId!;
+      const userId = req.user!.userId;
+      const taskId = req.params.taskId as string;
+      const { content, isSystem } = req.body;
+      if (!content || typeof content !== "string") {
+        res.status(400).json({ success: false, error: "Content is required" });
+        return;
+      }
+      const comment = await TaskService.createComment(taskId, workspaceId, userId, content.trim(), Boolean(isSystem));
+      res.status(201).json({ success: true, data: comment });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: error.message });
+    }
+  }
 }

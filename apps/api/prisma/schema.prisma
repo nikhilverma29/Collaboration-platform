@@ -59,6 +59,7 @@ model User {
   assignedTasks      Task[]            @relation("TaskAssignee")
   reportedTasks      Task[]            @relation("TaskReporter")
   taskHistoryEntries TaskHistory[]     @relation("TaskHistoryActor")
+  taskComments       TaskComment[]     @relation("TaskCommentAuthor")
   // Phase 4
   createdFolders     Folder[]          @relation("FolderCreator")
   createdFiles       File[]            @relation("FileCreator")
@@ -394,6 +395,8 @@ model Task {
   assignee  User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   reporter  User          @relation("TaskReporter", fields: [reporterId], references: [id])
   history   TaskHistory[]
+  subtasks  TaskSubtask[]
+  comments  TaskComment[]
 
   @@index([workspaceId])
   @@index([projectId])
@@ -402,6 +405,47 @@ model Task {
   @@index([status])
   @@index([priority])
   @@map("tasks")
+}
+
+// -----------------------------------------------------------------------------
+// TaskSubtask
+// Structured subtask checklist item belonging to a Task.
+// -----------------------------------------------------------------------------
+
+model TaskSubtask {
+  id        String   @id @default(cuid())
+  taskId    String
+  title     String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_subtasks")
+}
+
+// -----------------------------------------------------------------------------
+// TaskComment
+// Discussion comments and system event annotations on a Task.
+// -----------------------------------------------------------------------------
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  authorId  String
+  content   String
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation("TaskCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([authorId])
+  @@map("task_comments")
 }
 
 // -----------------------------------------------------------------------------

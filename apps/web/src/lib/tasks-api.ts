@@ -72,3 +72,44 @@ export const tasksApi = {
     await api.delete(`/tasks/${taskId}`)
   },
 }
+
+// ---------------------------------------------------------------------------
+// Subtasks API
+// ---------------------------------------------------------------------------
+
+export const subtasksApi = {
+  list: async (taskId: string): Promise<any[]> => {
+    const res = await api.get(`/tasks/${taskId}/subtasks`)
+    return res.data.data
+  },
+
+  create: async (taskId: string, title: string): Promise<any> => {
+    const res = await api.post(`/tasks/${taskId}/subtasks`, { title })
+    return res.data.data
+  },
+
+  toggle: async (subtaskId: string, done: boolean): Promise<any> => {
+    const res = await api.patch(`/tasks/subtasks/${subtaskId}`, { done })
+    return res.data.data
+  },
+
+  delete: async (subtaskId: string): Promise<void> => {
+    await api.delete(`/tasks/subtasks/${subtaskId}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Comments API
+// ---------------------------------------------------------------------------
+
+export const commentsApi = {
+  list: async (taskId: string): Promise<any[]> => {
+    const res = await api.get(`/tasks/${taskId}/comments`)
+    return res.data.data
+  },
+
+  create: async (taskId: string, content: string, isSystem?: boolean): Promise<any> => {
+    const res = await api.post(`/tasks/${taskId}/comments`, { content, isSystem })
+    return res.data.data
+  },
+}

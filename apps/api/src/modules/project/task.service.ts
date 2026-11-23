@@ -199,4 +199,84 @@ export class TaskService {
       where: { id: taskId, workspaceId },
     });
   }
+
+  // ── Subtasks ─────────────────────────────────────────────────────────────
+  static async listSubtasks(taskId: string, workspaceId: string) {
+    await prisma.task.findUniqueOrThrow({ where: { id: taskId, workspaceId } });
+    return prisma.taskSubtask.findMany({
+      where: { taskId },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  static async createSubtask(taskId: string, workspaceId: string, title: string) {
+    await prisma.task.findUniqueOrThrow({ where: { id: taskId, workspaceId } });
+    return prisma.taskSubtask.create({
+      data: { taskId, title },
+    });
+  }
+
+  static async toggleSubtask(subtaskId: string, workspaceId: string, done: boolean) {
+    const subtask = await prisma.taskSubtask.findUniqueOrThrow({
+      where: { id: subtaskId },
+      include: { task: { select: { workspaceId: true } } },
+    });
+    if (subtask.task.workspaceId !== workspaceId) {
+      throw new Error("Unauthorized");
+    }
+    return prisma.taskSubtask.update({
+      where: { id: subtaskId },
+      data: { done },
+    });
+  }
+
+  static async deleteSubtask(subtaskId: string, workspaceId: string) {
+    const subtask = await prisma.taskSubtask.findUniqueOrThrow({
+      where: { id: subtaskId },
+      include: { task: { select: { workspaceId: true } } },
+    });
+    if (subtask.task.workspaceId !== workspaceId) {
+      throw new Error("Unauthorized");
+    }
+    return prisma.taskSubtask.delete({
+      where: { id: subtaskId },
+    });
+  }
+
+  // ── Comments ─────────────────────────────────────────────────────────────
+  static async listComments(taskId: string, workspaceId: string) {
+    await prisma.task.findUniqueOrThrow({ where: { id: taskId, workspaceId } });
+    return prisma.taskComment.findMany({
+      where: { taskId },
+      include: {
+        author: {
+          select: { id: true, displayName: true, avatarUrl: true },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  static async createComment(
+    taskId: string,
+    workspaceId: string,
+    authorId: string,
+    content: string,
+    isSystem: boolean = false
+  ) {
+    await prisma.task.findUniqueOrThrow({ where: { id: taskId, workspaceId } });
+    return prisma.taskComment.create({
+      data: {
+        taskId,
+        authorId,
+        content,
+        isSystem,
+      },
+      include: {
+        author: {
+          select: { id: true, displayName: true, avatarUrl: true },
+        },
+      },
+    });
+  }
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { projectsApi, tasksApi, boardsApi } from '@/lib/tasks-api'
+import { projectsApi, tasksApi, boardsApi, subtasksApi, commentsApi } from '@/lib/tasks-api'
 import type { Project, Task, Board, Column, CreateTaskInput, UpdateTaskInput } from '@/types'
 
 // ---------------------------------------------------------------------------
@@ -300,7 +300,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     return project
   },
 
-  // ── Subtasks Support ──────────────────────────────────────────────────────
+  // ── Subtasks Support (Resilient Cache-First) ─────────────────────────────
 
   getSubtasks: (taskId) => {
     const current = get().subtasksByTask[taskId]
@@ -309,12 +309,29 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((s) => ({
       subtasksByTask: { ...s.subtasksByTask, [taskId]: loaded },
     }))
+
+    // Background asynchronous sync from PostgreSQL
+    subtasksApi.list(taskId).then((serverSubtasks) => {
+      if (Array.isArray(serverSubtasks)) {
+        const mapped: TaskSubtask[] = serverSubtasks.map((st: any) => ({
+          id: st.id,
+          title: st.title,
+          done: Boolean(st.done),
+        }))
+        set((s) => ({
+          subtasksByTask: { ...s.subtasksByTask, [taskId]: mapped },
+        }))
+        saveSubtasksToStorage(taskId, mapped)
+      }
+    }).catch(() => {})
+
     return loaded
   },
 
   addSubtask: (taskId, title) => {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const newSubtask: TaskSubtask = {
-      id: Math.random().toString(36).slice(2, 9),
+      id: tempId,
       title: title.trim(),
       done: false,
     }
@@ -324,16 +341,43 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((s) => ({
       subtasksByTask: { ...s.subtasksByTask, [taskId]: updated },
     }))
+
+    // Background sync to PostgreSQL; updates temporary ID upon success
+    subtasksApi.create(taskId, title.trim()).then((created) => {
+      if (created?.id) {
+        set((s) => {
+          const list = s.subtasksByTask[taskId] ?? []
+          const synced = list.map((item) => (item.id === tempId ? { ...item, id: created.id } : item))
+          saveSubtasksToStorage(taskId, synced)
+          return {
+            subtasksByTask: { ...s.subtasksByTask, [taskId]: synced },
+          }
+        })
+      }
+    }).catch(() => {})
+
     return newSubtask
   },
 
   toggleSubtask: (taskId, subtaskId) => {
     const current = get().getSubtasks(taskId)
-    const updated = current.map((s) => (s.id === subtaskId ? { ...s, done: !s.done } : s))
+    let nextDone = false
+    const updated = current.map((s) => {
+      if (s.id === subtaskId) {
+        nextDone = !s.done
+        return { ...s, done: nextDone }
+      }
+      return s
+    })
     saveSubtasksToStorage(taskId, updated)
     set((s) => ({
       subtasksByTask: { ...s.subtasksByTask, [taskId]: updated },
     }))
+
+    // If ID is synced with backend, persist to PostgreSQL
+    if (!subtaskId.startsWith('temp-')) {
+      subtasksApi.toggle(subtaskId, nextDone).catch(() => {})
+    }
   },
 
   deleteSubtask: (taskId, subtaskId) => {
@@ -343,9 +387,13 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((s) => ({
       subtasksByTask: { ...s.subtasksByTask, [taskId]: updated },
     }))
+
+    if (!subtaskId.startsWith('temp-')) {
+      subtasksApi.delete(subtaskId).catch(() => {})
+    }
   },
 
-  // ── Comments Support ──────────────────────────────────────────────────────
+  // ── Comments Support (Resilient Cache-First) ─────────────────────────────
 
   getComments: (taskId, initialSysComment) => {
     const current = get().commentsByTask[taskId]
@@ -362,12 +410,32 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((s) => ({
       commentsByTask: { ...s.commentsByTask, [taskId]: loaded },
     }))
+
+    // Background asynchronous sync from PostgreSQL
+    commentsApi.list(taskId).then((serverComments) => {
+      if (Array.isArray(serverComments) && serverComments.length > 0) {
+        const mapped: TaskComment[] = serverComments.map((c: any) => ({
+          id: c.id,
+          authorId: c.authorId,
+          authorName: c.author?.displayName ?? 'Member',
+          content: c.content,
+          createdAt: c.createdAt,
+          isSystem: Boolean(c.isSystem),
+        }))
+        set((s) => ({
+          commentsByTask: { ...s.commentsByTask, [taskId]: mapped },
+        }))
+        saveCommentsToStorage(taskId, mapped)
+      }
+    }).catch(() => {})
+
     return loaded
   },
 
   addComment: (taskId, comment) => {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const newComment: TaskComment = {
-      id: Math.random().toString(36).slice(2, 9),
+      id: tempId,
       authorId: comment.authorId,
       authorName: comment.authorName,
       content: comment.content,
@@ -380,6 +448,25 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((s) => ({
       commentsByTask: { ...s.commentsByTask, [taskId]: updated },
     }))
+
+    // Background sync to PostgreSQL; updates ID and author name upon success
+    commentsApi.create(taskId, comment.content, comment.isSystem).then((created) => {
+      if (created?.id) {
+        set((s) => {
+          const list = s.commentsByTask[taskId] ?? []
+          const synced = list.map((item) => (item.id === tempId ? {
+            ...item,
+            id: created.id,
+            authorName: created.author?.displayName ?? item.authorName,
+          } : item))
+          saveCommentsToStorage(taskId, synced)
+          return {
+            commentsByTask: { ...s.commentsByTask, [taskId]: synced },
+          }
+        })
+      }
+    }).catch(() => {})
+
     return newComment
   },
 }))
