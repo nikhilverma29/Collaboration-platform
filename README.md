@@ -52,14 +52,14 @@ flowchart TD
         S3Storage["Supabase Storage / S3 CDN"]
     end
 
-    UI -->|HTTP REST Requests (Axios)| RateLimiter
+    UI -->|"HTTP REST Requests (Axios)"| RateLimiter
     RateLimiter --> AuthMiddleware
     AuthMiddleware --> HTTP
-    WSClient <-->|Bidirectional WebSockets (WSS)| WSServer
+    WSClient ---|"Bidirectional WebSockets (WSS)"| WSServer
     HTTP --> PrismaClient
     WSServer --> PrismaClient
     PrismaClient --> Postgres
-    HTTP -->|Presigned Asset Uploads| S3Storage
+    HTTP -->|"Presigned Asset Uploads"| S3Storage
 ```
 
 ---
