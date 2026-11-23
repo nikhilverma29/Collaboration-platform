@@ -4,10 +4,95 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>web</title>
+    <meta name="description" content="Syncra — The collaboration platform for modern teams. Tasks, chat, documents, calendar, and AI in one place." />
+    <title>Syncra — Collaboration Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+    <!--
+      Flash-prevention: apply the persisted theme BEFORE React mounts.
+      Reads syncra_theme from localStorage and sets the correct class on <html>
+      immediately, so there is no flash of wrong theme on page load.
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('syncra_theme');
+          var theme = 'dark'; // safe default
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            theme = (parsed.state && parsed.state.theme) || 'dark';
+          }
+          if (theme === 'system') {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.classList.remove('dark', 'light');
+          document.documentElement.classList.add(theme);
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+
+    <!--
+      TweakCN Live Theme Preview Bridge
+      Listens for CSS variable messages from tweakcn.com's Custom URL iframe preview.
+      When tweakcn sends theme updates via postMessage, we apply them directly to :root.
+      This is ONLY for development previewing — has zero effect in production.
+    -->
+    <script>
+      (function () {
+        // Apply a flat map of CSS variable name → value to :root
+        function applyVars(vars) {
+          if (!vars || typeof vars !== 'object') return;
+          const root = document.documentElement;
+          Object.entries(vars).forEach(function ([key, value]) {
+            if (typeof value === 'string') {
+              // Handle both "--foo" and "foo" key formats
+              const prop = key.startsWith('--') ? key : '--' + key;
+              root.style.setProperty(prop, value);
+            }
+          });
+        }
+
+        // Handle tweakcn postMessage events
+        window.addEventListener('message', function (event) {
+          // Only accept messages from tweakcn.com
+          if (!event.origin.includes('tweakcn.com')) return;
+
+          var data = event.data;
+          if (!data) return;
+
+          // Format 1: { type: 'tweakcn:theme', styles: { light: {...}, dark: {...} }, mode: 'dark' }
+          if (data.type === 'tweakcn:theme' && data.styles) {
+            var mode = data.mode || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+            applyVars(data.styles[mode] || data.styles);
+            return;
+          }
+
+          // Format 2: { type: 'theme-update', variables: {...} }
+          if (data.type === 'theme-update' && data.variables) {
+            applyVars(data.variables);
+            return;
+          }
+
+          // Format 3: direct variables object { '--background': '...', ... }
+          if (data['--background'] || data.background) {
+            applyVars(data);
+          }
+        });
+
+        // Tell tweakcn the bridge is ready
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'tweakcn:ready' }, '*');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
