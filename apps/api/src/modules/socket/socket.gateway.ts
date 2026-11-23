@@ -3,6 +3,7 @@ import { socketAuthMiddleware } from "./socket.middleware";
 import { PresenceService } from "../presence/presence.service";
 import { SocketService } from "./socket.service";
 import { SOCKET_EVENTS } from "@syncra/validators";
+import { prisma } from "../../lib/db";
 
 /**
  * Manages the WebSocket connection lifecycle and room partitioning.
@@ -33,7 +34,35 @@ export class SocketGateway {
       socket.join(`user:${userId}`);
       console.log(`[Socket.io] Client connected: User ${userId} -> Room ${workspaceRoom}`);
 
-      // 2. Mark user as online in presence store and compute updated status
+      // 2. Join Authorized Channel Rooms (ADR-004 privacy isolation)
+      try {
+        const accessibleChannels = await prisma.channel.findMany({
+          where: {
+            workspaceId,
+            isArchived: false,
+            OR: [
+              { type: "PUBLIC" },
+              { members: { some: { userId } } },
+            ],
+          },
+          select: { id: true },
+        });
+
+        for (const ch of accessibleChannels) {
+          socket.join(`channel:${ch.id}`);
+        }
+      } catch (err) {
+        console.error(`[Socket.io] Failed to preload channel rooms for user ${userId}:`, err);
+      }
+
+      // 3. Dynamic Channel Join Listener
+      socket.on("channel:join", (channelId: string) => {
+        if (typeof channelId === "string" && channelId.trim()) {
+          socket.join(`channel:${channelId.trim()}`);
+        }
+      });
+
+      // 4. Mark user as online in presence store and compute updated status
       PresenceService.markOnline(workspaceId, userId);
       const presenceInfo = await PresenceService.computeStatus(workspaceId, userId);
 

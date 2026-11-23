@@ -65,6 +65,33 @@ export class SocketService {
   }
 
   /**
+   * Emits an event strictly to users who have joined a specific channel room.
+   * Ensures private channels and direct message events are never leaked to the entire workspace (ADR-004).
+   */
+  static broadcastToChannel<T>(
+    channelId: string,
+    event: SocketEvent,
+    payload: { actorId?: string; data: T; workspaceId: string }
+  ) {
+    if (!this.io) {
+      console.warn(`[Socket.io] Missed channel broadcast '${event}': Service not initialized.`);
+      return;
+    }
+
+    const room = `channel:${channelId}`;
+    const envelope: SocketEventEnvelope<T> = {
+      meta: {
+        workspaceId: payload.workspaceId,
+        actorId: payload.actorId,
+        timestamp: new Date().toISOString(),
+      },
+      data: payload.data,
+    };
+
+    this.io.to(room).emit(event, envelope);
+  }
+
+  /**
    * Emit directly to a specific user across all their active sockets.
    */
   static sendToUser<T>(userId: string, event: SocketEvent, data: T) {

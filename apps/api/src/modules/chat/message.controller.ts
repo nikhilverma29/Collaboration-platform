@@ -37,9 +37,10 @@ export class MessageController {
 
       const { message, mentionedUserIds } = await MessageService.send(workspaceId, userId, parsed.data);
 
-      // Broadcast the new message to the workspace room
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_SENT, {
+      // Broadcast the new message strictly to the channel room (ADR-004)
+      SocketService.broadcastToChannel(parsed.data.channelId, SOCKET_EVENTS.MESSAGE_SENT, {
         actorId: userId,
+        workspaceId,
         data: message,
       });
 
@@ -75,8 +76,9 @@ export class MessageController {
 
       const message = await MessageService.edit(messageId, workspaceId, userId, parsed.data);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_UPDATED, {
+      SocketService.broadcastToChannel(message.channelId, SOCKET_EVENTS.MESSAGE_UPDATED, {
         actorId: userId,
+        workspaceId,
         data: message,
       });
 
@@ -99,8 +101,9 @@ export class MessageController {
 
       const message = await MessageService.delete(messageId, workspaceId, userId, isAdmin);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_DELETED, {
+      SocketService.broadcastToChannel(message.channelId, SOCKET_EVENTS.MESSAGE_DELETED, {
         actorId: userId,
+        workspaceId,
         data: { messageId: message.id, channelId: message.channelId },
       });
 
@@ -144,10 +147,13 @@ export class MessageController {
       // Re-fetch the message so we can broadcast its updated state
       const updatedMessage = await MessageService.getById(messageId, workspaceId);
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.MESSAGE_UPDATED, {
-        actorId: userId,
-        data: { type: "reaction_toggled", message: updatedMessage },
-      });
+      if (updatedMessage) {
+        SocketService.broadcastToChannel(updatedMessage.channelId, SOCKET_EVENTS.MESSAGE_UPDATED, {
+          actorId: userId,
+          workspaceId,
+          data: { type: "reaction_toggled", message: updatedMessage },
+        });
+      }
 
       res.status(200).json({ success: true, data: result });
     } catch (error: any) {
@@ -167,8 +173,9 @@ export class MessageController {
       const workspaceId = req.user!.workspaceId!;
       const { channelId } = parsed.data;
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.TYPING_START, {
+      SocketService.broadcastToChannel(channelId, SOCKET_EVENTS.TYPING_START, {
         actorId: userId,
+        workspaceId,
         data: { channelId, userId },
       });
 
@@ -190,8 +197,9 @@ export class MessageController {
       const workspaceId = req.user!.workspaceId!;
       const { channelId } = parsed.data;
 
-      SocketService.broadcastToWorkspace(workspaceId, SOCKET_EVENTS.TYPING_STOP, {
+      SocketService.broadcastToChannel(channelId, SOCKET_EVENTS.TYPING_STOP, {
         actorId: userId,
+        workspaceId,
         data: { channelId, userId },
       });
 

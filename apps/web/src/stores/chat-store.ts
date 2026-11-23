@@ -79,6 +79,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   setActiveChannel: async (channelId) => {
+    const socket = getSocket()
+    if (socket?.connected) {
+      socket.emit('channel:join', channelId)
+    }
+
     const state = get()
     if (state.activeChannelId === channelId && state.messagesByChannel[channelId]) {
       return
@@ -159,6 +164,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   createChannel: async (data) => {
     const channel = await channelsApi.create(data)
+    const socket = getSocket()
+    if (socket?.connected) {
+      socket.emit('channel:join', channel.id)
+    }
     set(s => {
       if (s.channels.some(c => c.id === channel.id)) return s
       return { channels: [channel, ...s.channels] }
@@ -169,6 +178,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   createDM: async (targetUserId: string) => {
     const dm = await channelsApi.createDM(targetUserId)
+    const socket = getSocket()
+    if (socket?.connected) {
+      socket.emit('channel:join', dm.id)
+    }
     set(s => {
       if (s.channels.some(c => c.id === dm.id)) return s
       return { channels: [dm, ...s.channels] }
