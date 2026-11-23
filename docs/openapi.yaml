@@ -1,0 +1,441 @@
+openapi: 3.0.3
+info:
+  title: Syncra API Specification
+  description: >
+    Production REST API specification for the Syncra collaboration platform.
+    Covers core endpoints for Authentication, Multi-Tenant Workspaces, Projects,
+    Kanban Tasks, and Chat Channels/Messaging.
+  version: 1.0.0
+servers:
+  - url: http://localhost:4000/api
+    description: Local development server
+
+tags:
+  - name: Authentication
+    description: User registration, sessions, JWTs, and token rotation
+  - name: Workspaces
+    description: Multi-tenant boundary and workspace switching
+  - name: Projects & Tasks
+    description: Kanban boards, task management, and fractional ordering
+  - name: Chat & Messages
+    description: Channels, direct messages, and chat history
+
+paths:
+  # =========================================================================
+  # AUTHENTICATION
+  # =========================================================================
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  example: P@ssword123
+                displayName:
+                  type: string
+                  example: Alex Morgan
+      responses:
+        '201':
+          description: User registered successfully. Sets HttpOnly session cookies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  example: P@ssword123
+      responses:
+        '200':
+          description: Login successful. Sets syncra_access and syncra_refresh cookies.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Rotate refresh token and re-issue access token
+      description: >
+        Reads the syncra_refresh cookie, hashes it with SHA-256, validates revocation status,
+        and issues a fresh token pair. If a revoked token is detected, all user sessions are wiped.
+      responses:
+        '200':
+          description: Session refreshed successfully. New cookies set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke session and clear cookies
+      responses:
+        '200':
+          description: Successfully logged out.
+
+  # =========================================================================
+  # WORKSPACES
+  # =========================================================================
+  /workspaces/{id}/switch:
+    post:
+      tags: [Workspaces]
+      summary: Switch active workspace context
+      description: Re-issues the syncra_access JWT pre-populated with workspaceId and user's role.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Switched workspace successfully. New JWT issued.
+
+  # =========================================================================
+  # PROJECTS & TASKS
+  # =========================================================================
+  /projects:
+    get:
+      tags: [Projects & Tasks]
+      summary: List all projects in active workspace
+      responses:
+        '200':
+          description: Array of projects with boards and columns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+
+  /tasks:
+    get:
+      tags: [Projects & Tasks]
+      summary: List tasks for a project with optional filters
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [TODO, IN_PROGRESS, IN_REVIEW, DONE, CANCELLED] }
+        - name: priority
+          in: query
+          schema: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        - name: assigneeId
+          in: query
+          schema: { type: string }
+        - name: label
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of filtered tasks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+    post:
+      tags: [Projects & Tasks]
+      summary: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, columnId, title]
+              properties:
+                projectId: { type: string }
+                columnId: { type: string }
+                title: { type: string, example: "Implement OAuth flow" }
+                description: { type: string }
+                priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT], default: MEDIUM }
+                status: { type: string, enum: [TODO, IN_PROGRESS, IN_REVIEW, DONE], default: TODO }
+                labels: { type: string, example: "Backend, Auth" }
+                assigneeId: { type: string }
+                dueDate: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Task created and broadcast to workspace socket room.
+
+  /tasks/{id}:
+    get:
+      tags: [Projects & Tasks]
+      summary: Get task details with full audit history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Task details including column, assignee, and history log.
+    patch:
+      tags: [Projects & Tasks]
+      summary: Update task properties
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+                status: { type: string, enum: [TODO, IN_PROGRESS, IN_REVIEW, DONE, CANCELLED] }
+                assigneeId: { type: string }
+                dueDate: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Task updated.
+    delete:
+      tags: [Projects & Tasks]
+      summary: Delete a task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Task deleted.
+
+  /tasks/{id}/move:
+    post:
+      tags: [Projects & Tasks]
+      summary: Drag-and-drop reorder or move across columns
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [position]
+              properties:
+                columnId:
+                  type: string
+                  description: Optional new column ID. If omitted, task stays in current column.
+                position:
+                  type: number
+                  format: float
+                  description: Floating-point midpoint position for O(1) fractional indexing.
+                  example: 1536.5
+      responses:
+        '200':
+          description: Task position updated and broadcast via TASK_MOVED.
+
+  # =========================================================================
+  # CHAT & MESSAGES
+  # =========================================================================
+  /channels:
+    get:
+      tags: [Chat & Messages]
+      summary: List all channels in active workspace
+      responses:
+        '200':
+          description: Array of channels with unread counts and members.
+    post:
+      tags: [Chat & Messages]
+      summary: Create a public, private, or direct-message channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name: { type: string, example: "engineering" }
+                topic: { type: string }
+                type: { type: string, enum: [PUBLIC, PRIVATE, DIRECT_MESSAGE] }
+                memberIds: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Channel created.
+
+  /messages:
+    get:
+      tags: [Chat & Messages]
+      summary: List channel messages (cursor-paginated)
+      parameters:
+        - name: channelId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 100 }
+        - name: before
+          in: query
+          description: Message ID cursor for fetching older messages
+          schema: { type: string }
+      responses:
+        '200':
+          description: Array of messages in chronological order.
+    post:
+      tags: [Chat & Messages]
+      summary: Send a message into a channel or thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId, content]
+              properties:
+                channelId: { type: string }
+                content: { type: string, example: "Review completed on #SYN-1234" }
+                parentId:
+                  type: string
+                  description: Optional parent message ID for thread replies.
+                fileId:
+                  type: string
+                  description: Optional attached file ID from Supabase storage.
+      responses:
+        '201':
+          description: Message sent, notifications dispatched, and socket broadcast emitted.
+
+# ===========================================================================
+# COMPONENTS & SCHEMAS
+# ===========================================================================
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: syncra_access
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            id: { type: string, example: "usr_abc123" }
+            email: { type: string, example: "alex@example.com" }
+            displayName: { type: string, example: "Alex Morgan" }
+
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: "Customer Portal Revamp" }
+        key: { type: string, example: "CPR" }
+        workspaceId: { type: string }
+        boards:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              columns:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string, example: "In Progress" }
+                    position: { type: number }
+
+    Task:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT] }
+        status: { type: string, enum: [TODO, IN_PROGRESS, IN_REVIEW, DONE, CANCELLED] }
+        position: { type: number, format: float }
+        labels: { type: string, nullable: true }
+        columnId: { type: string }
+        assignee:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            displayName: { type: string }
+            avatarUrl: { type: string, nullable: true }
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters or Zod validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, example: false }
+              error: { type: string }
+    Unauthorized:
+      description: Authentication missing, cookie expired, or invalid credentials
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean, example: false }
+              error: { type: string, example: "Authentication required" }
+
