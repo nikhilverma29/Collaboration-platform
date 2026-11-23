@@ -33,6 +33,18 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Internal planning, prompt packs, and audit scratchpads
+packs/
+packs.manifest.json
+scripts/build-packs.mjs
+PROJECT_RAMAYANA.md
+FINAL ROADMAP.md
+CURRENT_PHASE.md
+final staged frontend.md
+frontend_visualization.md
+AUDIT_REPORT.md
+Audit report folder/
+
 # Misc
 .DS_Store
 *.pem
