@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation, Link, useNavigate } from 'react-router-dom'
 import {
   Search,
@@ -14,11 +14,26 @@ import {
   Command,
   LogOut,
   Settings,
+  Copy,
+  Check,
+  X,
+  Loader2,
 } from 'lucide-react'
+import api from '@/lib/api'
 import { useUIStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useBreadcrumbStore } from '@/stores/breadcrumb-store'
 import { ThemeSelector } from '@/components/theme-selector'
+
+interface NotificationItem {
+  id: string
+  type: string
+  title: string
+  body?: string | null
+  link?: string | null
+  isRead: boolean
+  createdAt: string
+}
 
 const SEGMENT_LABELS: Record<string, string> = {
   workspace: 'Workspace',
@@ -72,7 +87,17 @@ export function Topbar({ onOpenSearch }: { onOpenSearch?: () => void }) {
   const [createOpen,  setCreateOpen]  = useState(false)
   const [notifOpen,   setNotifOpen]   = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const unreadCount = 3
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [notifsLoading, setNotifsLoading] = useState(false)
+  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState(false)
+
+  const memberships = useAuthStore((s) => s.memberships)
+  const tenant      = useAuthStore((s) => s.tenant)
+  const activeWorkspace = memberships.find((m) => m.workspace.id === tenant?.workspaceId)?.workspace
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length
 
   const userInitials = user?.displayName
     ?.split(' ')
@@ -85,6 +110,77 @@ export function Topbar({ onOpenSearch }: { onOpenSearch?: () => void }) {
     setCreateOpen(false)
     setNotifOpen(false)
     setProfileOpen(false)
+  }
+
+  const fetchNotifications = async () => {
+    try {
+      setNotifsLoading(true)
+      const res = await api.get('/notifications')
+      setNotifications(res.data?.data ?? [])
+    } catch {
+      // Keep existing on failure
+    } finally {
+      setNotifsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchNotifications()
+  }, [])
+
+  const handleOpenNotifications = () => {
+    const next = !notifOpen
+    setNotifOpen(next)
+    setCreateOpen(false)
+    setProfileOpen(false)
+    if (next) {
+      fetchNotifications()
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    try {
+      await api.put('/notifications/read-all')
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    } catch (err) {
+      console.error('Failed to mark all notifications read', err)
+    }
+  }
+
+  const handleNotificationClick = async (item: NotificationItem) => {
+    if (!item.isRead) {
+      try {
+        await api.put(`/notifications/${item.id}/read`)
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n))
+        )
+      } catch {}
+    }
+    setNotifOpen(false)
+    if (item.link) {
+      navigate(item.link)
+    }
+  }
+
+  const handleCreateAction = (label: string) => {
+    closeAll()
+    switch (label) {
+      case 'New Task':
+        navigate('/workspace/tasks?action=new-task')
+        break
+      case 'New Message':
+        navigate('/workspace/chat?action=new-dm')
+        break
+      case 'New Doc':
+        navigate('/workspace/docs')
+        break
+      case 'New Space':
+        navigate('/workspace/tasks?action=new-project')
+        break
+      case 'Invite People':
+        setInviteModalOpen(true)
+        break
+    }
   }
 
   return (
@@ -134,7 +230,7 @@ export function Topbar({ onOpenSearch }: { onOpenSearch?: () => void }) {
             className="topbar-icon-btn"
             title={`Notifications${unreadCount ? ` (${unreadCount} unread)` : ''}`}
             aria-label="Notifications"
-            onClick={() => { setNotifOpen((o) => !o); setCreateOpen(false); setProfileOpen(false) }}
+            onClick={handleOpenNotifications}
           >
             <Bell size={15} strokeWidth={1.75} />
             {unreadCount > 0 && (
@@ -143,27 +239,58 @@ export function Topbar({ onOpenSearch }: { onOpenSearch?: () => void }) {
           </button>
 
           {notifOpen && (
-            <div className="topbar-popover" style={{ width: '20rem', right: 0 }} role="dialog" aria-label="Notifications">
+            <div className="topbar-popover" style={{ width: '22rem', right: 0 }} role="dialog" aria-label="Notifications">
               <div className="topbar-popover-header">
                 <span style={{ fontWeight: 600, fontSize: '0.8125rem' }}>Notifications</span>
-                <button style={{ fontSize: '0.6875rem', color: 'var(--accent-brand)', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setNotifOpen(false)}>
-                  Mark all read
-                </button>
+                {unreadCount > 0 && (
+                  <button
+                    style={{ fontSize: '0.6875rem', color: 'var(--accent-brand)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                    onClick={handleMarkAllRead}
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
-              {[
-                { text: 'Alice commented on API rate limit task', time: '2m ago', unread: true },
-                { text: 'Bob invited you to #engineering', time: '14m ago', unread: true },
-                { text: 'Sprint planning notes updated', time: '1h ago', unread: true },
-                { text: 'Priya started a DM with you', time: '3h ago', unread: false },
-              ].map((n, i) => (
-                <div key={i} className={`topbar-notif-item${n.unread ? ' unread' : ''}`}>
-                  {n.unread && <span className="topbar-notif-dot" />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-primary)', lineHeight: 1.4, margin: 0 }}>{n.text}</p>
-                    <p style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', margin: '0.125rem 0 0' }}>{n.time}</p>
+
+              <div style={{ maxHeight: '20rem', overflowY: 'auto' }}>
+                {notifsLoading && notifications.length === 0 && (
+                  <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                    <Loader2 size={16} className="animate-spin" style={{ margin: '0 auto 0.375rem', color: 'var(--accent-brand)' }} />
+                    Loading notifications…
                   </div>
-                </div>
-              ))}
+                )}
+
+                {!notifsLoading && notifications.length === 0 && (
+                  <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                    <Bell size={20} strokeWidth={1.5} style={{ color: 'var(--text-disabled)', margin: '0 auto 0.5rem', display: 'block' }} />
+                    No notifications yet
+                  </div>
+                )}
+
+                {notifications.map((n) => (
+                  <div
+                    key={n.id}
+                    className={`topbar-notif-item${!n.isRead ? ' unread' : ''}`}
+                    onClick={() => handleNotificationClick(n)}
+                    style={{ cursor: n.link ? 'pointer' : 'default' }}
+                  >
+                    {!n.isRead && <span className="topbar-notif-dot" />}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-primary)', lineHeight: 1.4, margin: 0, fontWeight: !n.isRead ? 600 : 400 }}>
+                        {n.title}
+                      </p>
+                      {n.body && (
+                        <p style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', margin: '0.125rem 0 0', lineHeight: 1.3 }}>
+                          {n.body}
+                        </p>
+                      )}
+                      <p style={{ fontSize: '0.625rem', color: 'var(--text-disabled)', margin: '0.1875rem 0 0' }}>
+                        {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -190,7 +317,12 @@ export function Topbar({ onOpenSearch }: { onOpenSearch?: () => void }) {
                 <span style={{ fontWeight: 600, fontSize: '0.6875rem', color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Create</span>
               </div>
               {CREATE_ITEMS.map(({ icon: Icon, label, shortcut }) => (
-                <button key={label} className="topbar-menu-item" role="menuitem" onClick={() => setCreateOpen(false)}>
+                <button
+                  key={label}
+                  className="topbar-menu-item"
+                  role="menuitem"
+                  onClick={() => handleCreateAction(label)}
+                >
                   <Icon size={13} strokeWidth={1.75} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
                   <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>
                   <kbd className="topbar-shortcut">{shortcut}</kbd>
@@ -286,6 +418,103 @@ export function Topbar({ onOpenSearch }: { onOpenSearch?: () => void }) {
           onClick={closeAll}
           aria-hidden="true"
         />
+      )}
+
+      {/* Invite Modal */}
+      {inviteModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => setInviteModalOpen(false)}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: '24rem',
+              background: 'var(--surface-card)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '0.625rem',
+              boxShadow: 'var(--shadow-lg)',
+              padding: '1.25rem',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Users size={16} style={{ color: 'var(--accent-brand)' }} />
+                <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Invite to {activeWorkspace?.name ?? 'Workspace'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInviteModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '0.125rem' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 1rem' }}>
+              Share this workspace invite code with teammates so they can join this workspace directly:
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.375rem', marginBottom: '1rem' }}>
+              <input
+                type="text"
+                readOnly
+                value={activeWorkspace?.inviteCode ?? tenant?.workspaceId ?? 'No invite code'}
+                style={{
+                  flex: 1,
+                  background: 'var(--surface-1)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '0.375rem',
+                  padding: '0.375rem 0.625rem',
+                  fontSize: '0.8125rem',
+                  fontFamily: 'var(--font-mono, monospace)',
+                  color: 'var(--text-primary)',
+                  letterSpacing: '0.02em',
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const code = activeWorkspace?.inviteCode ?? tenant?.workspaceId ?? ''
+                  if (code) {
+                    navigator.clipboard.writeText(code)
+                    setCopiedInvite(true)
+                    setTimeout(() => setCopiedInvite(false), 2000)
+                  }
+                }}
+                className="topbar-btn primary"
+                style={{ gap: '0.3125rem', padding: '0 0.75rem', flexShrink: 0 }}
+              >
+                {copiedInvite ? <Check size={13} strokeWidth={2.5} /> : <Copy size={13} strokeWidth={2} />}
+                <span>{copiedInvite ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setInviteModalOpen(false)}
+                className="topbar-btn"
+                style={{ fontSize: '0.75rem' }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </header>
   )

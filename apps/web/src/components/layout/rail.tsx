@@ -7,7 +7,6 @@ import {
   FileText,
   Calendar,
   Sparkles,
-  User,
   Check,
   Plus,
   Settings,
@@ -102,59 +101,6 @@ function RailItem({ icon: Icon, label, to, badgeCount, hasDot, isActive }: RailI
         )}
       </span>
       <span className="rail-item-label">{label}</span>
-    </NavLink>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// ProfileButton
-// ---------------------------------------------------------------------------
-
-/**
- * ProfileButton — the SINGLE canonical access point for account controls.
- *
- * Placed at the bottom of the Rail, visually separated from product areas
- * by the rail-divider. It answers: "Who am I / how do I access account settings?"
- *
- * Settings is accessed through this button (→ /workspace/settings).
- * There is NO separate Settings gear icon — that would duplicate the destination.
- */
-function ProfileButton() {
-  const user = useAuthStore((s) => s.user)
-
-  const initials = user?.displayName
-    ?.split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() ?? '?'
-
-  return (
-    <NavLink
-      to="/workspace/settings"
-      title={`${user?.displayName ?? 'Profile'} · Settings`}
-      className={({ isActive }) => `rail-item${isActive ? ' active' : ''}`}
-    >
-      <span
-        className="rail-item-icon"
-        style={{
-          width: '1.375rem',
-          height: '1.375rem',
-          borderRadius: '50%',
-          background: 'var(--accent-ghost)',
-          border: '1px solid var(--border-zone)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '0.55rem',
-          fontWeight: 700,
-          color: 'var(--accent-brand)',
-          letterSpacing: '0.02em',
-        }}
-      >
-        {initials || <User size={10} />}
-      </span>
-      <span className="rail-item-label">Profile</span>
     </NavLink>
   )
 }
@@ -539,14 +485,6 @@ export function Rail() {
           )
         })}
       </nav>
-
-      {/* Visual separator: product areas above / account controls below */}
-      <div className="rail-divider" />
-
-      {/* Account controls — ONE canonical location for profile + settings */}
-      <div className="rail-bottom">
-        <ProfileButton />
-      </div>
     </aside>
   )
 }
