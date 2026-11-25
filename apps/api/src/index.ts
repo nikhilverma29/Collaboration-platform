@@ -59,10 +59,26 @@ const httpServer = createServer(app);
 
 app.use(helmet());
 
+const rawClientUrl = process.env["CLIENT_URL"] || process.env["CORS_ORIGIN"] || "http://localhost:5173";
+const allowedOrigins = rawClientUrl.split(",").map((s) => s.trim().replace(/\/$/, ""));
+
 app.use(
   cors({
-    origin: process.env["CLIENT_URL"] ?? "http://localhost:5173",
-    credentials: true, // required for HTTP-only cookie transport
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true);
+      const cleanOrigin = origin.replace(/\/$/, "");
+      if (
+        allowedOrigins.includes(cleanOrigin) ||
+        cleanOrigin.endsWith(".vercel.app") ||
+        process.env["NODE_ENV"] !== "production"
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
+    credentials: true,
   })
 );
 

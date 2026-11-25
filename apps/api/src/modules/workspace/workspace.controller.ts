@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { WorkspaceService } from "./workspace.service";
 import { createWorkspaceSchema, joinWorkspaceSchema } from "@syncra/validators";
 import { signAccessToken } from "../../lib/jwt";
+import { getCookieOptions } from "../../lib/cookie";
 import { AuditService } from "../audit/audit.service";
 import { SocketService } from "../socket/socket.service";
 import { SOCKET_EVENTS } from "@syncra/validators";
@@ -93,11 +94,8 @@ export class WorkspaceController {
       
       // Update just the access token cookie
       res.cookie("syncra_access", accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        path: "/",
-        maxAge: 15 * 60 * 1000 // 15 minutes
+        ...getCookieOptions(),
+        maxAge: 15 * 60 * 1000, // 15 minutes
       });
       
       res.status(200).json({ 

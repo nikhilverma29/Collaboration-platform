@@ -22,11 +22,12 @@ export class SocketService {
 
     // Default in-memory adapter is used for Phase 1-8 development.
     // CORS must be configured to allow credentials so HttpOnly cookies pass the handshake.
+    const allowedOrigin = process.env.CLIENT_URL || process.env.CORS_ORIGIN || "http://localhost:5173";
     this.io = new Server(server, {
       cors: {
-        origin: process.env.CORS_ORIGIN || "http://localhost:5173", // Example Vite default
-        credentials: true, 
-      }
+        origin: allowedOrigin.split(",").map((s) => s.trim().replace(/\/$/, "")),
+        credentials: true,
+      },
     });
 
     // Wire up the lifecycle and authentication guards
