@@ -370,6 +370,7 @@ model Column {
 
 model Task {
   id          String       @id @default(cuid())
+  seqId       Int          @default(autoincrement())
   workspaceId String
   projectId   String
   columnId    String

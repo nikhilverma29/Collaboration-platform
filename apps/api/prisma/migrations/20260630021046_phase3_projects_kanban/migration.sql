@@ -38,6 +38,7 @@ CREATE TABLE "boards" (
     "name" TEXT NOT NULL DEFAULT 'Main Board',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+
     CONSTRAINT "boards_pkey" PRIMARY KEY ("id")
 );
 

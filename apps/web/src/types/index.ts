@@ -91,6 +91,7 @@ export interface TaskAssignee {
 
 export interface Task {
   id: string
+  seqId?: number
   workspaceId: string
   projectId: string
   columnId: string

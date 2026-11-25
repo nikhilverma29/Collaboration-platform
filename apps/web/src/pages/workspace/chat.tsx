@@ -96,7 +96,11 @@ function TaskUnfurlCard({ code, onNavigate }: TaskUnfurlCardProps) {
 
     // 1. Check local tasksByColumn first
     const allLocal = Object.values(tasksByColumn).flat()
-    const match = allLocal.find((t) => t.id.slice(-6).toUpperCase() === upperCode)
+    const match = allLocal.find((t) =>
+      (t.seqId != null
+        ? `${t.seqId}` === upperCode
+        : t.id.slice(-6).toUpperCase() === upperCode)
+    )
 
     if (match) {
       setResolvedTask(match)
@@ -113,7 +117,11 @@ function TaskUnfurlCard({ code, onNavigate }: TaskUnfurlCardProps) {
         }
         for (const p of currentProjects) {
           const pTasks = await tasksApi.list({ projectId: p.id }).catch(() => [])
-          const found = pTasks.find((t) => t.id.slice(-6).toUpperCase() === upperCode)
+          const found = pTasks.find((t) =>
+            (t.seqId != null
+              ? `${t.seqId}` === upperCode
+              : t.id.slice(-6).toUpperCase() === upperCode)
+          )
           if (found) {
             if (isMounted) {
               setResolvedTask(found)
@@ -247,7 +255,7 @@ interface MessageContentProps {
 }
 
 function MessageContent({ content, onNavigate }: MessageContentProps) {
-  const matches = Array.from(content.matchAll(/(#?SYN-([A-Z0-9]{6}))\b/gi))
+  const matches = Array.from(content.matchAll(/(#?SYN-([A-Z0-9]{1,6}))\b/gi))
 
   if (matches.length === 0) {
     return <p className="chat-message-content">{content}</p>
@@ -1303,7 +1311,9 @@ export function ChatPage() {
               [msgToTaskSource.id]: {
                 id: task.id,
                 title: task.title,
-                code: `SYN-${task.id.slice(-6).toUpperCase()}`,
+                code: task.seqId != null
+                  ? `SYN-${task.seqId}`
+                  : `SYN-${task.id.slice(-6).toUpperCase()}`,
               },
             }))
             setMsgToTaskSource(null)
