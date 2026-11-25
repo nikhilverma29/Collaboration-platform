@@ -125,7 +125,9 @@ function TaskCard({
   const done = task.status === 'DONE' || task.status === 'CANCELLED'
   const assigneeInitials = task.assignee?.displayName
     ?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() ?? '?'
-  const taskCode = `SYN-${task.id.slice(-6).toUpperCase()}`
+  const taskCode = task.seqId != null
+    ? `SYN-${task.seqId}`
+    : `SYN-${task.id.slice(-6).toUpperCase()}`
 
   const subtasks = useTaskStore((s) => s.subtasksByTask[task.id]) ?? []
   const subtaskDone = subtasks.filter((s) => s.done).length
@@ -447,7 +449,9 @@ function TaskTableRow({
   onToggleDone: (t: Task) => void
 }) {
   const done = task.status === 'DONE' || task.status === 'CANCELLED'
-  const taskCode = `SYN-${task.id.slice(-6).toUpperCase()}`
+  const taskCode = task.seqId != null
+    ? `SYN-${task.seqId}`
+    : `SYN-${task.id.slice(-6).toUpperCase()}`
 
   return (
     <div
@@ -1006,6 +1010,23 @@ export function TasksPage() {
           if (task.assigneeId !== assigneeFilter) return false
         }
 
+        // Scope view filter (?view=my-tasks | assigned-by-me | due-this-week)
+        const viewScope = searchParams.get('view')
+        if (viewScope === 'my-tasks') {
+          if (currentUser?.id && task.assigneeId !== currentUser.id) return false
+        } else if (viewScope === 'assigned-by-me') {
+          if (currentUser?.id && (task.reporterId !== currentUser.id || task.assigneeId === currentUser.id)) return false
+        } else if (viewScope === 'due-this-week') {
+          if (!task.dueDate) return false
+          const due = new Date(task.dueDate)
+          if (isNaN(due.getTime())) return false
+          const now = new Date()
+          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+          const endOfWeek = startOfToday + 7 * 24 * 60 * 60 * 1000 // 7 days rolling window
+          const dueTime = due.getTime()
+          if (dueTime < startOfToday || dueTime > endOfWeek) return false
+        }
+
         // Priority filter
         if (priorityFilter.length > 0) {
           if (!priorityFilter.includes(task.priority)) return false
@@ -1056,15 +1077,17 @@ export function TasksPage() {
     }
 
     return result
-  }, [tasksByColumn, searchQuery, assigneeFilter, priorityFilter, statusFilter, tagFilter, sortBy])
+  }, [tasksByColumn, searchQuery, assigneeFilter, priorityFilter, statusFilter, tagFilter, sortBy, searchParams, currentUser])
 
+  const viewScope = searchParams.get('view')
   const isFiltered = Boolean(
     searchQuery.trim() ||
     assigneeFilter !== null ||
     priorityFilter.length > 0 ||
     statusFilter.length > 0 ||
     tagFilter.length > 0 ||
-    sortBy !== 'default'
+    sortBy !== 'default' ||
+    Boolean(viewScope)
   )
 
   const handleClearAllFilters = () => {
@@ -1074,6 +1097,13 @@ export function TasksPage() {
     setStatusFilter([])
     setTagFilter([])
     setSortBy('default')
+    if (searchParams.get('view')) {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('view')
+        return next
+      }, { replace: true })
+    }
   }
 
   const getSortLabel = (key: SortOption) => {
@@ -1189,6 +1219,18 @@ export function TasksPage() {
       }, { replace: true })
     }
   }, [searchParams, setSearchParams])
+
+  // Open create task form in first column when action=new-task is present
+  useEffect(() => {
+    if (searchParams.get('action') === 'new-task' && columns.length > 0) {
+      setCreateTaskCol(columns[0].id)
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('action')
+        return next
+      }, { replace: true })
+    }
+  }, [searchParams, columns, setSearchParams])
 
   // Load projects on mount
   useEffect(() => { fetchProjects(); return () => setLabel(null) }, [])
@@ -1713,6 +1755,31 @@ export function TasksPage() {
             </div>
           )}
         </div>
+
+        {/* Active Scope View Pill */}
+        {viewScope && (
+          <div className="tasks-scope-pill">
+            <span>
+              {viewScope === 'my-tasks' && 'My Tasks'}
+              {viewScope === 'assigned-by-me' && 'Assigned by me'}
+              {viewScope === 'due-this-week' && 'Due this week'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev)
+                  next.delete('view')
+                  return next
+                }, { replace: true })
+              }}
+              title="Clear view filter"
+              aria-label="Clear view filter"
+            >
+              <X size={10} strokeWidth={2.5} />
+            </button>
+          </div>
+        )}
 
         {/* E. Active Filter Clear Action */}
         {isFiltered && (

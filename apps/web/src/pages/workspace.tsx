@@ -730,7 +730,7 @@ export function DashboardPage() {
                   onClick={() => setIsAddingTask(true)}
                 >
                   <Plus size={12} strokeWidth={2.5} />
-                  <span>+ Add task...</span>
+                  <span>Add task...</span>
                 </button>
               )}
             </div>
@@ -745,47 +745,54 @@ export function DashboardPage() {
             </div>
 
             <div className="home-jump-grid">
-              {/* Recent Projects */}
-              {projectStats.slice(0, 2).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="home-jump-card"
-                  onClick={() => handleJumpProject(p.id)}
-                >
-                  <div className="home-jump-card-title">
-                    <Folder size={13} style={{ color: 'var(--accent-brand)', flexShrink: 0 }} />
-                    <span>{p.name}</span>
-                  </div>
-                  <div className="home-jump-card-meta">
-                    {p.done}/{p.total} tasks done
-                  </div>
-                </button>
-              ))}
+              {(() => {
+                const maxProjects = Math.min(projectStats.length, 2)
+                const maxChannels = Math.min(channels.length, 4 - maxProjects)
 
-              {/* Recent Channels */}
-              {channels.slice(0, 2).map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className="home-jump-card"
-                  onClick={() => handleJumpChannel(c.id)}
-                >
-                  <div className="home-jump-card-title">
-                    <Hash size={13} style={{ color: 'var(--accent-brand)', flexShrink: 0 }} />
-                    <span>{c.name || 'channel'}</span>
-                  </div>
-                  <div className="home-jump-card-meta">
-                    {c._count?.messages ? `${c._count.messages} messages` : 'active discussion'}
-                  </div>
-                </button>
-              ))}
-
-              {projectStats.length === 0 && channels.length === 0 && (
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', padding: '0.5rem 0' }}>
-                  No active projects or channels yet.
-                </div>
-              )}
+                return (
+                  <>
+                    {projectStats.slice(0, maxProjects).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="home-jump-card"
+                        onClick={() => handleJumpProject(p.id)}
+                      >
+                        <div className="home-jump-card-title">
+                          <Folder size={13} style={{ color: 'var(--accent-brand)', flexShrink: 0 }} />
+                          <span>{p.name}</span>
+                        </div>
+                        <div className="home-jump-card-meta">
+                          {p.done}/{p.total} tasks done
+                        </div>
+                      </button>
+                    ))}
+                    {channels.slice(0, maxChannels).map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="home-jump-card"
+                        onClick={() => handleJumpChannel(c.id)}
+                      >
+                        <div className="home-jump-card-title">
+                          <Hash size={13} style={{ color: 'var(--accent-brand)', flexShrink: 0 }} />
+                          <span>{c.name || 'channel'}</span>
+                        </div>
+                        <div className="home-jump-card-meta">
+                          {c._count?.messages
+                            ? `${c._count.messages} message${c._count.messages === 1 ? '' : 's'}`
+                            : 'No messages yet'}
+                        </div>
+                      </button>
+                    ))}
+                    {projectStats.length === 0 && channels.length === 0 && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', padding: '0.5rem 0' }}>
+                        No active projects or channels yet.
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
 
             {/* Jump footer pills */}
@@ -872,16 +879,18 @@ export function DashboardPage() {
               <button
                 type="button"
                 className="home-card-action"
-                onClick={() => navigate('/workspace/tasks')}
+                onClick={() => navigate('/workspace/tasks?view=assigned-by-me')}
               >
                 View all →
               </button>
             </div>
 
             {assignedByMe.length === 0 ? (
-              <div className="home-empty-state-box" style={{ padding: '1.25rem 1rem' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                  No tasks assigned to teammates.
+              <div className="home-empty-state-box">
+                <CheckCircle2 size={18} style={{ color: 'var(--text-disabled)', marginBottom: '0.25rem' }} />
+                <span className="home-empty-state-title">No delegated tasks.</span>
+                <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', textAlign: 'center', lineHeight: 1.5 }}>
+                  Tasks you assign to teammates will appear here.
                 </span>
               </div>
             ) : (
